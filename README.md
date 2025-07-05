@@ -28,10 +28,5 @@ A comprehensive web-based system for managing and monitoring regatta races with 
    - Set chat password
    - Configure admin credentials
 
-## 📄 License
-
-This project is developed for internal use. All rights reserved.
 
 ---
-
-**Developed for professional regatta events with focus on reliability, user-friendliness, and real-time communication.** 
