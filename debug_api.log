@@ -1,0 +1,12 @@
+[2025-03-24 21:37:27] API call: /get_race_results.php?race_id=9999
+[2025-03-24 21:37:27] Processing race_id: 9999
+[2025-03-24 21:37:27] Database connection established
+[2025-03-24 21:37:27] Race exists: no
+[2025-03-24 21:37:27] Error response: 404 - Rennen mit ID 9999 nicht gefunden
+[2025-03-24 21:37:27] Response: {"success":false,"message":"Rennen mit ID 9999 nicht gefunden"}
+[2025-03-24 21:37:35] API call: /get_race_results.php?race_id=9999
+[2025-03-24 21:37:35] Processing race_id: 9999
+[2025-03-24 21:37:35] Database connection established
+[2025-03-24 21:37:35] Race exists: no
+[2025-03-24 21:37:35] Error response: 404 - Rennen mit ID 9999 nicht gefunden
+[2025-03-24 21:37:35] Response: {"success":false,"message":"Rennen mit ID 9999 nicht gefunden"}

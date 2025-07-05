@@ -1,0 +1,132 @@
+/* Custom styles for Rowing Regatta Management */
+
+body {
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+header h1 {
+    color: #0056b3;
+    margin-bottom: 20px;
+}
+
+.navbar {
+    border-radius: 0.25rem;
+    margin-bottom: 1rem;
+}
+
+.card {
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.card-header {
+    font-weight: bold;
+}
+
+.table th {
+    font-weight: 600;
+    background-color: #f1f1f1;
+}
+
+/* Race status badges */
+.badge.bg-primary,
+.badge.bg-success,
+.badge.bg-danger {
+    font-size: 85%;
+    font-weight: 500;
+    padding: 0.4em 0.6em;
+}
+
+/* Card stats on home and historical pages */
+.display-4 {
+    font-size: 2.5rem;
+    font-weight: 700;
+}
+
+/* Tabs styling */
+.nav-tabs .nav-link.active {
+    font-weight: 600;
+    border-color: #dee2e6 #dee2e6 #fff;
+}
+
+.nav-tabs .nav-link {
+    color: #495057;
+}
+
+.nav-tabs .nav-link:hover {
+    border-color: #e9ecef #e9ecef #dee2e6;
+}
+
+/* Winner and medals styling */
+.text-success {
+    color: #28a745 !important;
+}
+
+.text-secondary {
+    color: #6c757d !important;
+}
+
+.text-warning {
+    color: #ffc107 !important;
+}
+
+/* Form elements */
+.form-control:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.btn-primary {
+    background-color: #0056b3;
+    border-color: #0056b3;
+}
+
+.btn-primary:hover {
+    background-color: #004494;
+    border-color: #003d82;
+}
+
+/* Responsive fixes */
+@media (max-width: 768px) {
+    .display-4 {
+        font-size: 2rem;
+    }
+    
+    .card-body {
+        padding: 1rem;
+    }
+}
+
+/* Header image for home page */
+.p-4.p-md-5.mb-4.text-white.rounded.bg-dark {
+    background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7)), url('../img/rowing-header.jpg');
+    background-size: cover;
+    background-position: center;
+    margin-top: 1rem;
+}
+
+/* Historical data cards */
+.card.h-100 {
+    transition: all 0.2s ease-in-out;
+}
+
+.card.h-100:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Admin panel styling */
+#adminTabsContent {
+    background-color: #fff;
+}
+
+/* Results table highlight */
+tr.table-success {
+    background-color: rgba(40, 167, 69, 0.1) !important;
+} 
