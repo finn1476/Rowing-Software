@@ -257,10 +257,10 @@ if [ "$OLD_HASH" != "$NEW_HASH" ]; then
     mv "$TMP_SCRIPT" "$MONITOR_SCRIPT"
     chmod +x "$MONITOR_SCRIPT"
     chown kiosk:kiosk "$MONITOR_SCRIPT"
-    echo "Script $MONITOR_SCRIPT wurde aktualisiert und ist ausführbar."
+    log "Script $MONITOR_SCRIPT wurde aktualisiert und ist ausführbar."
 else
     rm -f "$TMP_SCRIPT"
-    echo "Script $MONITOR_SCRIPT ist bereits aktuell."
+    log "Script $MONITOR_SCRIPT ist bereits aktuell."
 fi
 
 # Cronjob im root-Crontab eintragen (alle 1 Minute), wenn noch nicht vorhanden
@@ -269,9 +269,36 @@ CURRENT_ROOT_CRON=$(sudo crontab -l 2>/dev/null || true)
 
 if ! echo "$CURRENT_ROOT_CRON" | grep -Fq "$CRON_MONITOR"; then
     (echo "$CURRENT_ROOT_CRON"; echo "$CRON_MONITOR") | sudo crontab -
-    echo "Cronjob für kiosk-monitor.sh wurde zum root-Crontab hinzugefügt."
+    log "Cronjob für kiosk-monitor.sh wurde zum root-Crontab hinzugefügt."
 else
-    echo "Cronjob für kiosk-monitor.sh ist bereits vorhanden."
+    log "Cronjob für kiosk-monitor.sh ist bereits vorhanden."
+fi
+
+log "Setze Eigentümer und Rechte für $SETUP_SCRIPT..."
+
+sudo chown root:root "$SETUP_SCRIPT"
+sudo chmod 755 "$SETUP_SCRIPT"
+
+OWNER=$(stat -c '%U:%G' "$SETUP_SCRIPT")
+PERMS=$(stat -c '%a' "$SETUP_SCRIPT")
+
+if [ "$OWNER" = "root:root" ] && [ "$PERMS" = "755" ]; then
+    log "Rechte und Eigentümer korrekt gesetzt: $OWNER, Berechtigungen: $PERMS"
+else
+    log "Warnung: Rechte oder Eigentümer sind nicht korrekt! Aktuell: $OWNER, Berechtigungen: $PERMS"
 fi
 
 
+log "Setze Eigentümer und Rechte für $MONITOR_SCRIPT..."
+
+sudo chown root:root "$MONITOR_SCRIPT"
+sudo chmod 755 "$MONITOR_SCRIPT"
+
+OWNER=$(stat -c '%U:%G' "$MONITOR_SCRIPT")
+PERMS=$(stat -c '%a' "$MONITOR_SCRIPT")
+
+if [ "$OWNER" = "root:root" ] && [ "$PERMS" = "755" ]; then
+    log "Rechte und Eigentümer korrekt gesetzt: $OWNER, Berechtigungen: $PERMS"
+else
+    log "Warnung: Rechte oder Eigentümer sind nicht korrekt! Aktuell: $OWNER, Berechtigungen: $PERMS"
+fi
