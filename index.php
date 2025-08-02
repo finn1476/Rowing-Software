@@ -35,6 +35,9 @@
                                 <a class="nav-link" href="index.php?page=historical_data">Historical Data</a>
                             </li>
                             <li class="nav-item">
+                                <a class="nav-link" href="pages/registration.php">Meldeportal</a>
+                            </li>
+                            <li class="nav-item">
                                 <a class="nav-link" href="index.php?page=admin">Admin</a>
                             </li>
                         </ul>

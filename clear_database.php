@@ -35,7 +35,11 @@ if (isset($_POST['password1']) && isset($_POST['password2']) && isset($_POST['pa
                 'races',
                 'events',
                 'teams',
-                'years'
+                'years',
+                // Registration system tables
+                'registration_singles',
+                'registration_boats',
+                'registration_events'
             ];
             
             // Truncate each table
@@ -96,6 +100,9 @@ if (isset($_POST['password1']) && isset($_POST['password2']) && isset($_POST['pa
                         <li>Teilnehmer</li>
                         <li>Rennteilnehmer</li>
                         <li>Distanzzeiten</li>
+                        <li>Registrierungs-Events</li>
+                        <li>Boot-Registrierungen</li>
+                        <li>Einzel-Registrierungen</li>
                     </ul>
                     <p>Die Datenbankstruktur bleibt erhalten, aber alle Daten werden entfernt.</p>
                 </div>

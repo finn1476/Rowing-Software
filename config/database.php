@@ -117,6 +117,50 @@ function initializeDatabase() {
                 marker_distance VARCHAR(32) DEFAULT NULL,
                 last_ping TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 UNIQUE KEY unique_role_marker (role, marker_distance)
+            )",
+            
+            "CREATE TABLE IF NOT EXISTS registration_events (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                event_date DATE NOT NULL,
+                description TEXT,
+                main_event_id INT DEFAULT NULL COMMENT 'Reference to main events table',
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (main_event_id) REFERENCES events(id) ON DELETE SET NULL
+            )",
+            
+            "CREATE TABLE IF NOT EXISTS registration_boats (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                event_id INT,
+                boat_name VARCHAR(255) NOT NULL,
+                boat_type ENUM('1x', '2x', '3x+', '4x') NOT NULL,
+                club_name VARCHAR(255) NOT NULL,
+                captain_name VARCHAR(255) NOT NULL,
+                captain_birth_year INT DEFAULT NULL,
+                crew_members JSON COMMENT 'Array of crew member names and birth years',
+                contact_email VARCHAR(255),
+                contact_phone VARCHAR(50),
+                status ENUM('pending', 'approved', 'rejected', 'used') DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (event_id) REFERENCES registration_events(id) ON DELETE CASCADE
+            )",
+            
+            "CREATE TABLE IF NOT EXISTS registration_singles (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                event_id INT,
+                name VARCHAR(255) NOT NULL,
+                birth_year INT NOT NULL,
+                preferred_boat_types JSON COMMENT 'Array of preferred boat types (1x, 2x, 3x+, 4x)',
+                desired_races INT DEFAULT 1 COMMENT 'Number of races the participant wants to compete in',
+                races_completed INT DEFAULT 0 COMMENT 'Number of races already completed',
+                experience_level ENUM('beginner', 'intermediate', 'advanced') DEFAULT 'intermediate',
+                contact_email VARCHAR(255),
+                contact_phone VARCHAR(50),
+                additional_info TEXT,
+                status ENUM('pending', 'approved', 'rejected', 'used') DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (event_id) REFERENCES registration_events(id) ON DELETE CASCADE
             )"
         ];
         
@@ -202,6 +246,106 @@ function initializeDatabase() {
             }
         } catch (PDOException $e) {
             error_log("Error checking/adding actual_start_time column: " . $e->getMessage());
+        }
+        
+        // Add main_event_id column to registration_events if it doesn't exist
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM registration_events LIKE 'main_event_id'");
+            $stmt->execute();
+            $columnExists = $stmt->fetchColumn();
+            if (!$columnExists) {
+                $conn->exec("ALTER TABLE registration_events ADD COLUMN main_event_id INT DEFAULT NULL COMMENT 'Reference to main events table' AFTER description");
+                // Add foreign key constraint
+                $conn->exec("ALTER TABLE registration_events ADD CONSTRAINT fk_registration_events_main_event FOREIGN KEY (main_event_id) REFERENCES events(id) ON DELETE SET NULL");
+            }
+        } catch (PDOException $e) {
+            error_log("Error checking/adding main_event_id column: " . $e->getMessage());
+        }
+        
+        // Update captain_birth_year column to allow NULL if it doesn't already
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM registration_boats LIKE 'captain_birth_year'");
+            $stmt->execute();
+            $columnInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($columnInfo && $columnInfo['Null'] === 'NO') {
+                $conn->exec("ALTER TABLE registration_boats MODIFY COLUMN captain_birth_year INT DEFAULT NULL");
+            }
+        } catch (PDOException $e) {
+            error_log("Error updating captain_birth_year column: " . $e->getMessage());
+        }
+        
+        // Update registration_boats status enum to include 'used'
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM registration_boats LIKE 'status'");
+            $stmt->execute();
+            $columnInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($columnInfo) {
+                // Check if 'used' is already in the enum
+                $stmt = $conn->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'registration_boats' AND COLUMN_NAME = 'status' AND COLUMN_TYPE LIKE '%used%'");
+                $stmt->execute();
+                $hasUsed = $stmt->fetchColumn();
+                
+                if (!$hasUsed) {
+                    $conn->exec("ALTER TABLE registration_boats MODIFY COLUMN status ENUM('pending', 'approved', 'rejected', 'used') DEFAULT 'pending'");
+                }
+            }
+        } catch (PDOException $e) {
+            error_log("Error updating registration_boats status enum: " . $e->getMessage());
+        }
+        
+        // Update registration_singles status enum to include 'approved' and 'used'
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM registration_singles LIKE 'status'");
+            $stmt->execute();
+            $columnInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($columnInfo) {
+                // Check if 'approved' and 'used' are already in the enum
+                $stmt = $conn->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'registration_singles' AND COLUMN_NAME = 'status' AND COLUMN_TYPE LIKE '%approved%' AND COLUMN_TYPE LIKE '%used%'");
+                $stmt->execute();
+                $hasBoth = $stmt->fetchColumn();
+                
+                if (!$hasBoth) {
+                    $conn->exec("ALTER TABLE registration_singles MODIFY COLUMN status ENUM('pending', 'approved', 'rejected', 'used') DEFAULT 'pending'");
+                }
+            }
+        } catch (PDOException $e) {
+            error_log("Error updating registration_singles status enum: " . $e->getMessage());
+        }
+        
+        // Add desired_races and races_completed columns to registration_singles
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM registration_singles LIKE 'desired_races'");
+            $stmt->execute();
+            $columnInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$columnInfo) {
+                $conn->exec("ALTER TABLE registration_singles ADD COLUMN desired_races INT DEFAULT 1 AFTER preferred_boat_types");
+            }
+        } catch (PDOException $e) {
+            error_log("Error adding desired_races column: " . $e->getMessage());
+        }
+        
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM registration_singles LIKE 'races_completed'");
+            $stmt->execute();
+            $columnInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$columnInfo) {
+                $conn->exec("ALTER TABLE registration_singles ADD COLUMN races_completed INT DEFAULT 0 AFTER desired_races");
+            }
+        } catch (PDOException $e) {
+            error_log("Error adding races_completed column: " . $e->getMessage());
+        }
+        
+        // Add registration_boat_id column to race_participants if it doesn't exist
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM race_participants LIKE 'registration_boat_id'");
+            $stmt->execute();
+            $columnInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$columnInfo) {
+                $conn->exec("ALTER TABLE race_participants ADD COLUMN registration_boat_id INT DEFAULT NULL AFTER lane");
+                $conn->exec("ALTER TABLE race_participants ADD FOREIGN KEY (registration_boat_id) REFERENCES registration_boats(id) ON DELETE SET NULL");
+            }
+        } catch (PDOException $e) {
+            error_log("Error adding registration_boat_id column: " . $e->getMessage());
         }
         
         // Create indexes for performance

@@ -335,6 +335,9 @@ $teams = $conn->query("SELECT * FROM teams ORDER BY name")->fetchAll(PDO::FETCH_
     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
         <h2>Admin Panel</h2>
         <div>
+            <a href="registration_admin.php" class="btn btn-info btn-sm me-2">
+                <i class="bi bi-clipboard-check"></i> Meldeportal Admin
+            </a>
             <a href="logout.php" class="btn btn-secondary btn-sm me-2">
                 <i class="bi bi-box-arrow-right"></i> Logout
             </a>

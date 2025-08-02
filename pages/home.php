@@ -100,4 +100,7 @@ $latestResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
     </div>
-</div> 
+</div>
+
+<!-- Meldeportal Section -->
+<?php include_once 'registration_overview.php'; ?> 
