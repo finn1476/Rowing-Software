@@ -1,105 +1,221 @@
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+// Disable error display in production
+error_reporting(0);
+ini_set('display_errors', 0);
 
 session_start();
 require_once '../config/database.php';
 
 $conn = getDbConnection();
 
-// Handle form submissions
+// CSRF Protection
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+// Input validation and sanitization functions
+function validateAndSanitizeInput($input, $type = 'string', $maxLength = 255) {
+    if (empty($input)) {
+        return null;
+    }
+    
+    $input = trim($input);
+    
+    switch ($type) {
+        case 'email':
+            return filter_var($input, FILTER_VALIDATE_EMAIL) ? $input : null;
+        case 'int':
+            return filter_var($input, FILTER_VALIDATE_INT) ? (int)$input : null;
+        case 'phone':
+            // Basic phone validation - allow digits, spaces, +, -, (, )
+            return preg_match('/^[\d\s\+\-\(\)]+$/', $input) ? substr($input, 0, $maxLength) : null;
+        case 'name':
+            // Allow letters, spaces, hyphens, apostrophes, dots, and numbers for club names
+            return preg_match('/^[a-zA-ZäöüßÄÖÜ\s\-\'\.\d]+$/', $input) ? substr($input, 0, $maxLength) : null;
+        case 'year':
+            $year = filter_var($input, FILTER_VALIDATE_INT);
+            return ($year >= 1900 && $year <= date('Y')) ? $year : null;
+        case 'boat_type':
+            $allowed_types = ['1x', '2x', '3x+', '4x'];
+            return in_array($input, $allowed_types) ? $input : null;
+        case 'experience_level':
+            $allowed_levels = ['beginner', 'intermediate', 'advanced'];
+            return in_array($input, $allowed_levels) ? $input : null;
+        case 'desired_races':
+            $races = filter_var($input, FILTER_VALIDATE_INT);
+            return ($races >= 1 && $races <= 10) ? $races : null;
+        default:
+            return substr($input, 0, $maxLength);
+    }
+}
+
+// Handle form submissions with CSRF protection
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['action'])) {
-        switch ($_POST['action']) {
-            case 'register_boat':
-                $event_id = $_POST['event_id'];
-                $boat_type = $_POST['boat_type'];
-                $team_id = $_POST['team_id'];
-                $melder_name = $_POST['melder_name'];
-                $contact_email = $_POST['contact_email'] ?? '';
-                $contact_phone = $_POST['contact_phone'] ?? '';
-                
-                // Handle crew members - REQUIRED based on boat type
-                $crew_members = [];
-                $required_crew_count = getRequiredCrewCount($boat_type);
-                
-                if (isset($_POST['crew_first_names']) && is_array($_POST['crew_first_names'])) {
-                    $valid_crew_count = 0;
-                    foreach ($_POST['crew_first_names'] as $index => $first_name) {
-                        if (!empty($first_name) && !empty($_POST['crew_last_names'][$index]) && !empty($_POST['crew_birth_years'][$index])) {
-                            $crew_members[] = [
-                                'first_name' => $first_name,
-                                'last_name' => $_POST['crew_last_names'][$index],
-                                'birth_year' => $_POST['crew_birth_years'][$index],
-                                'club' => $_POST['crew_clubs'][$index] ?? 'Unbekannt'
-                            ];
-                            $valid_crew_count++;
+    // Verify CSRF token
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $error_message = "Sicherheitsfehler: Ungültiger Token.";
+    } else {
+        if (isset($_POST['action'])) {
+            switch ($_POST['action']) {
+                case 'register_boat':
+                    // Validate and sanitize all inputs
+                    $event_id = validateAndSanitizeInput($_POST['event_id'] ?? '', 'int');
+                    $boat_type = validateAndSanitizeInput($_POST['boat_type'] ?? '', 'boat_type');
+                    $melder_name = validateAndSanitizeInput($_POST['melder_name'] ?? '', 'name', 100);
+                    $contact_email = validateAndSanitizeInput($_POST['contact_email'] ?? '', 'email');
+                    $contact_phone = validateAndSanitizeInput($_POST['contact_phone'] ?? '', 'phone', 20);
+                    
+                    // Validate required fields
+                    if (!$event_id || !$boat_type || !$melder_name) {
+                        $error_message = "Bitte füllen Sie alle Pflichtfelder korrekt aus.";
+                        break;
+                    }
+                    
+                    // Validate event exists and is active
+                    try {
+                        $stmt = $conn->prepare("SELECT id FROM registration_events WHERE id = ? AND is_active = 1");
+                        $stmt->execute([$event_id]);
+                        if (!$stmt->fetch()) {
+                            $error_message = "Ungültige Veranstaltung ausgewählt.";
+                            break;
+                        }
+                    } catch (PDOException $e) {
+                        error_log("Database error in event validation: " . $e->getMessage());
+                        $error_message = "Ein Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.";
+                        break;
+                    }
+                    
+                    // Handle crew members - REQUIRED based on boat type
+                    $crew_members = [];
+                    $required_crew_count = getRequiredCrewCount($boat_type);
+                    
+                    if (isset($_POST['crew_first_names']) && is_array($_POST['crew_first_names'])) {
+                        $valid_crew_count = 0;
+                        foreach ($_POST['crew_first_names'] as $index => $first_name) {
+                            $first_name = validateAndSanitizeInput($first_name, 'name', 50);
+                            $last_name = validateAndSanitizeInput($_POST['crew_last_names'][$index] ?? '', 'name', 50);
+                            $birth_year = validateAndSanitizeInput($_POST['crew_birth_years'][$index] ?? '', 'year');
+                            $club = validateAndSanitizeInput($_POST['crew_clubs'][$index] ?? '', 'name', 100);
+                            
+                            if ($first_name && $last_name && $birth_year && $club) {
+                                $crew_members[] = [
+                                    'first_name' => $first_name,
+                                    'last_name' => $last_name,
+                                    'birth_year' => $birth_year,
+                                    'club' => $club
+                                ];
+                                $valid_crew_count++;
+                            }
+                        }
+                        
+                        // Check if we have enough crew members
+                        if ($valid_crew_count < $required_crew_count) {
+                            $error_message = "Für ein $boat_type Boot benötigen Sie mindestens $required_crew_count Crew-Mitglieder (Sie haben $valid_crew_count angegeben).";
+                            break;
+                        }
+                    } else {
+                        $error_message = "Für ein $boat_type Boot benötigen Sie mindestens $required_crew_count Crew-Mitglieder.";
+                        break;
+                    }
+                    
+                    if (!isset($error_message)) {
+                        try {
+                            // Generate boat name from first crew member's club and boat type
+                            $first_crew_club = $crew_members[0]['club'] ?? 'Unbekannt';
+                            $boat_name = $first_crew_club . ' ' . $boat_type;
+                            
+                            // Use first crew member's club as primary club
+                            $club_name = $first_crew_club;
+                            
+                            $stmt = $conn->prepare("INSERT INTO registration_boats (event_id, boat_name, boat_type, club_name, captain_name, captain_birth_year, crew_members, contact_email, contact_phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                            $stmt->execute([$event_id, $boat_name, $boat_type, $club_name, $melder_name, null, json_encode($crew_members), $contact_email, $contact_phone]);
+                            
+                            $success_message = "Bootmeldung erfolgreich eingereicht!";
+                        } catch (PDOException $e) {
+                            error_log("Database error in boat registration: " . $e->getMessage());
+                            $error_message = "Ein Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.";
+                        }
+                    }
+                    break;
+                    
+                case 'register_single':
+                    // Validate and sanitize all inputs
+                    $event_id = validateAndSanitizeInput($_POST['event_id'] ?? '', 'int');
+                    $first_name = validateAndSanitizeInput($_POST['first_name'] ?? '', 'name', 50);
+                    $last_name = validateAndSanitizeInput($_POST['last_name'] ?? '', 'name', 50);
+                    $birth_year = validateAndSanitizeInput($_POST['birth_year'] ?? '', 'year');
+                    $experience_level = validateAndSanitizeInput($_POST['experience_level'] ?? '', 'experience_level');
+                    $desired_races = validateAndSanitizeInput($_POST['desired_races'] ?? 1, 'desired_races');
+                    $contact_email = validateAndSanitizeInput($_POST['contact_email'] ?? '', 'email');
+                    $contact_phone = validateAndSanitizeInput($_POST['contact_phone'] ?? '', 'phone', 20);
+                    $additional_info = validateAndSanitizeInput($_POST['additional_info'] ?? '', 'string', 1000);
+                    
+                    // Validate required fields
+                    if (!$event_id || !$first_name || !$last_name || !$birth_year || !$experience_level || !$desired_races) {
+                        $error_message = "Bitte füllen Sie alle Pflichtfelder korrekt aus.";
+                        break;
+                    }
+                    
+                    // Validate event exists and is active
+                    try {
+                        $stmt = $conn->prepare("SELECT id FROM registration_events WHERE id = ? AND is_active = 1");
+                        $stmt->execute([$event_id]);
+                        if (!$stmt->fetch()) {
+                            $error_message = "Ungültige Veranstaltung ausgewählt.";
+                            break;
+                        }
+                    } catch (PDOException $e) {
+                        error_log("Database error in event validation: " . $e->getMessage());
+                        $error_message = "Ein Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.";
+                        break;
+                    }
+                    
+                    // Handle preferred boat types
+                    $preferred_types = [];
+                    if (isset($_POST['preferred_types']) && is_array($_POST['preferred_types'])) {
+                        foreach ($_POST['preferred_types'] as $type) {
+                            $valid_type = validateAndSanitizeInput($type, 'boat_type');
+                            if ($valid_type) {
+                                $preferred_types[] = $valid_type;
+                            }
                         }
                     }
                     
-                    // Check if we have enough crew members
-                    if ($valid_crew_count < $required_crew_count) {
-                        $error_message = "Für ein $boat_type Boot benötigen Sie mindestens $required_crew_count Crew-Mitglieder (Sie haben $valid_crew_count angegeben).";
-                        break;
-                    }
-                } else {
-                    $error_message = "Für ein $boat_type Boot benötigen Sie mindestens $required_crew_count Crew-Mitglieder.";
-                    break;
-                }
-                
-                if (!isset($error_message)) {
                     try {
-                                        // Generate boat name from first crew member's club and boat type
-                $first_crew_club = $crew_members[0]['club'] ?? 'Unbekannt';
-                $boat_name = $first_crew_club . ' ' . $boat_type;
-                
-                // Use first crew member's club as primary club
-                $club_name = $first_crew_club;
-                
-                $stmt = $conn->prepare("INSERT INTO registration_boats (event_id, boat_name, boat_type, club_name, captain_name, captain_birth_year, crew_members, contact_email, contact_phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                $stmt->execute([$event_id, $boat_name, $boat_type, $club_name, $melder_name, null, json_encode($crew_members), $contact_email, $contact_phone]);
+                        $full_name = $first_name . ' ' . $last_name;
+                        $stmt = $conn->prepare("INSERT INTO registration_singles (event_id, name, birth_year, preferred_boat_types, desired_races, experience_level, contact_email, contact_phone, additional_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$event_id, $full_name, $birth_year, json_encode($preferred_types), $desired_races, $experience_level, $contact_email, $contact_phone, $additional_info]);
                         
-                        $success_message = "Bootmeldung erfolgreich eingereicht!";
-                    } catch (Exception $e) {
-                        $error_message = "Datenbankfehler: " . $e->getMessage();
+                        $success_message = "Einzelmeldung erfolgreich eingereicht!";
+                    } catch (PDOException $e) {
+                        error_log("Database error in single registration: " . $e->getMessage());
+                        $error_message = "Ein Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.";
                     }
-                }
-                break;
-                
-            case 'register_single':
-                $event_id = $_POST['event_id'];
-                $first_name = $_POST['first_name'];
-                $last_name = $_POST['last_name'];
-                $birth_year = $_POST['birth_year'];
-                $experience_level = $_POST['experience_level'];
-                $desired_races = $_POST['desired_races'] ?? 1;
-                $contact_email = $_POST['contact_email'] ?? '';
-                $contact_phone = $_POST['contact_phone'] ?? '';
-                $additional_info = $_POST['additional_info'] ?? '';
-                
-                // Handle preferred boat types
-                $preferred_types = [];
-                if (isset($_POST['preferred_types']) && is_array($_POST['preferred_types'])) {
-                    $preferred_types = $_POST['preferred_types'];
-                }
-                
-                $full_name = $first_name . ' ' . $last_name;
-                $stmt = $conn->prepare("INSERT INTO registration_singles (event_id, name, birth_year, preferred_boat_types, desired_races, experience_level, contact_email, contact_phone, additional_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                $stmt->execute([$event_id, $full_name, $birth_year, json_encode($preferred_types), $desired_races, $experience_level, $contact_email, $contact_phone, $additional_info]);
-                
-                $success_message = "Einzelmeldung erfolgreich eingereicht!";
-                break;
+                    break;
+            }
         }
     }
 }
 
-// Get active events
-$stmt = $conn->query("SELECT * FROM registration_events WHERE is_active = 1 ORDER BY event_date ASC");
-$events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// Get active events with error handling
+try {
+    $stmt = $conn->prepare("SELECT * FROM registration_events WHERE is_active = 1 ORDER BY event_date ASC");
+    $stmt->execute();
+    $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Database error fetching events: " . $e->getMessage());
+    $events = [];
+}
 
-// Get all teams/clubs for dropdown
-$stmt = $conn->query("SELECT * FROM teams ORDER BY name ASC");
-$teams = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// Get all teams/clubs for dropdown with error handling
+try {
+    $stmt = $conn->prepare("SELECT * FROM teams ORDER BY name ASC");
+    $stmt->execute();
+    $teams = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Database error fetching teams: " . $e->getMessage());
+    $teams = [];
+}
 
 // Helper function to get required crew count for boat type
 function getRequiredCrewCount($boat_type) {
@@ -257,6 +373,15 @@ function getRequiredCrewCount($boat_type) {
             border: 1px solid #c3e6cb;
         }
         
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border: 1px solid #f5c6cb;
+        }
+        
         .events-list {
             background: white;
             padding: 20px;
@@ -305,13 +430,13 @@ function getRequiredCrewCount($boat_type) {
 
         <?php if (isset($success_message)): ?>
         <div class="success-message">
-            <?= htmlspecialchars($success_message) ?>
+            <?= htmlspecialchars($success_message, ENT_QUOTES, 'UTF-8') ?>
         </div>
         <?php endif; ?>
 
         <?php if (isset($error_message)): ?>
-        <div class="error-message" style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 4px; margin-bottom: 20px; border: 1px solid #f5c6cb;">
-            <?= htmlspecialchars($error_message) ?>
+        <div class="error-message">
+            <?= htmlspecialchars($error_message, ENT_QUOTES, 'UTF-8') ?>
         </div>
         <?php endif; ?>
 
@@ -323,10 +448,10 @@ function getRequiredCrewCount($boat_type) {
             <?php else: ?>
                 <?php foreach ($events as $event): ?>
                 <div class="event-card">
-                    <h3><?= htmlspecialchars($event['name']) ?></h3>
-                    <p class="event-date">Datum: <?= date('d.m.Y', strtotime($event['event_date'])) ?></p>
+                    <h3><?= htmlspecialchars($event['name'], ENT_QUOTES, 'UTF-8') ?></h3>
+                    <p class="event-date">Datum: <?= htmlspecialchars(date('d.m.Y', strtotime($event['event_date'])), ENT_QUOTES, 'UTF-8') ?></p>
                     <?php if ($event['description']): ?>
-                        <p><?= htmlspecialchars($event['description']) ?></p>
+                        <p><?= htmlspecialchars($event['description'], ENT_QUOTES, 'UTF-8') ?></p>
                     <?php endif; ?>
                 </div>
                 <?php endforeach; ?>
@@ -345,6 +470,7 @@ function getRequiredCrewCount($boat_type) {
             <div class="registration-form">
                 <h2>Bootmeldung</h2>
                 <form method="POST">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="action" value="register_boat">
                     
                     <div class="form-group">
@@ -352,8 +478,8 @@ function getRequiredCrewCount($boat_type) {
                         <select name="event_id" id="event_id" required>
                             <option value="">Bitte wählen Sie eine Regatta</option>
                             <?php foreach ($events as $event): ?>
-                            <option value="<?= $event['id'] ?>">
-                                <?= htmlspecialchars($event['name']) ?> (<?= date('d.m.Y', strtotime($event['event_date'])) ?>)
+                            <option value="<?= htmlspecialchars($event['id'], ENT_QUOTES, 'UTF-8') ?>">
+                                <?= htmlspecialchars($event['name'], ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars(date('d.m.Y', strtotime($event['event_date'])), ENT_QUOTES, 'UTF-8') ?>)
                             </option>
                             <?php endforeach; ?>
                         </select>
@@ -371,21 +497,19 @@ function getRequiredCrewCount($boat_type) {
                             </select>
                         </div>
                         
-                        <!-- Club selection moved to individual crew members -->
-                        
                         <div class="form-group">
                             <label for="melder_name">Melder Name:</label>
-                            <input type="text" name="melder_name" id="melder_name" required>
+                            <input type="text" name="melder_name" id="melder_name" required maxlength="100" pattern="[a-zA-ZäöüßÄÖÜ\s\-\'\.\d]+">
                         </div>
                         
                         <div class="form-group">
                             <label for="contact_email">Email (optional):</label>
-                            <input type="email" name="contact_email" id="contact_email">
+                            <input type="email" name="contact_email" id="contact_email" maxlength="255">
                         </div>
                         
                         <div class="form-group">
                             <label for="contact_phone">Telefon (optional):</label>
-                            <input type="tel" name="contact_phone" id="contact_phone">
+                            <input type="tel" name="contact_phone" id="contact_phone" maxlength="20" pattern="[\d\s\+\-\(\)]+">
                         </div>
                     </div>
 
@@ -412,6 +536,7 @@ function getRequiredCrewCount($boat_type) {
                 <p>Sie möchten gerne mitmachen, haben aber noch kein vollständiges Boot? Melden Sie sich hier an und wir versuchen, Sie mit anderen Teilnehmern zusammenzubringen.</p>
                 
                 <form method="POST">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="action" value="register_single">
                     
                     <div class="form-group">
@@ -419,8 +544,8 @@ function getRequiredCrewCount($boat_type) {
                         <select name="event_id" id="single_event_id" required>
                             <option value="">Bitte wählen Sie ein Rennen</option>
                             <?php foreach ($events as $event): ?>
-                            <option value="<?= $event['id'] ?>">
-                                <?= htmlspecialchars($event['name']) ?> (<?= date('d.m.Y', strtotime($event['event_date'])) ?>)
+                            <option value="<?= htmlspecialchars($event['id'], ENT_QUOTES, 'UTF-8') ?>">
+                                <?= htmlspecialchars($event['name'], ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars(date('d.m.Y', strtotime($event['event_date'])), ENT_QUOTES, 'UTF-8') ?>)
                             </option>
                             <?php endforeach; ?>
                         </select>
@@ -429,17 +554,17 @@ function getRequiredCrewCount($boat_type) {
                     <div class="form-grid">
                         <div class="form-group">
                             <label for="first_name">Vorname:</label>
-                            <input type="text" name="first_name" id="first_name" required>
+                            <input type="text" name="first_name" id="first_name" required maxlength="50" pattern="[a-zA-ZäöüßÄÖÜ\s\-\'\.\d]+">
                         </div>
                         
                         <div class="form-group">
                             <label for="last_name">Nachname:</label>
-                            <input type="text" name="last_name" id="last_name" required>
+                            <input type="text" name="last_name" id="last_name" required maxlength="50" pattern="[a-zA-ZäöüßÄÖÜ\s\-\'\.\d]+">
                         </div>
                         
                         <div class="form-group">
                             <label for="birth_year">Geburtsjahr:</label>
-                            <input type="number" name="birth_year" id="birth_year" min="1900" max="2010" required>
+                            <input type="number" name="birth_year" id="birth_year" min="1900" max="<?= date('Y') ?>" required>
                         </div>
                         
                         <div class="form-group">
@@ -464,12 +589,12 @@ function getRequiredCrewCount($boat_type) {
                         
                         <div class="form-group">
                             <label for="contact_email">Email (optional):</label>
-                            <input type="email" name="contact_email" id="contact_email">
+                            <input type="email" name="contact_email" id="contact_email" maxlength="255">
                         </div>
                         
                         <div class="form-group">
                             <label for="contact_phone">Telefon (optional):</label>
-                            <input type="tel" name="contact_phone" id="contact_phone">
+                            <input type="tel" name="contact_phone" id="contact_phone" maxlength="20" pattern="[\d\s\+\-\(\)]+">
                         </div>
                     </div>
 
@@ -493,7 +618,7 @@ function getRequiredCrewCount($boat_type) {
 
                     <div class="form-group full-width">
                         <label for="additional_info">Zusätzliche Informationen (optional):</label>
-                        <textarea name="additional_info" id="additional_info" rows="4" placeholder="Erzählen Sie uns etwas über sich, Ihre Erfahrung oder spezielle Wünsche..."></textarea>
+                        <textarea name="additional_info" id="additional_info" rows="4" placeholder="Erzählen Sie uns etwas über sich, Ihre Erfahrung oder spezielle Wünsche..." maxlength="1000"></textarea>
                     </div>
 
                     <div class="form-group full-width">
@@ -583,22 +708,22 @@ function getRequiredCrewCount($boat_type) {
                 <div class="crew-grid">
                     <div class="form-group">
                         <label>Vorname: <span style="color: red;">*</span></label>
-                        <input type="text" name="crew_first_names[]" required>
+                        <input type="text" name="crew_first_names[]" required maxlength="50" pattern="[a-zA-ZäöüßÄÖÜ\s\-\'\.\d]+">
                     </div>
                     <div class="form-group">
                         <label>Nachname: <span style="color: red;">*</span></label>
-                        <input type="text" name="crew_last_names[]" required>
+                        <input type="text" name="crew_last_names[]" required maxlength="50" pattern="[a-zA-ZäöüßÄÖÜ\s\-\'\.\d]+">
                     </div>
                     <div class="form-group">
                         <label>Geburtsjahr: <span style="color: red;">*</span></label>
-                        <input type="number" name="crew_birth_years[]" min="1900" max="2010" required>
+                        <input type="number" name="crew_birth_years[]" min="1900" max="<?= date('Y') ?>" required>
                     </div>
                     <div class="form-group">
                         <label>Verein: <span style="color: red;">*</span></label>
                         <select name="crew_clubs[]" required>
                             <option value="">Bitte wählen Sie einen Verein</option>
                             <?php foreach ($teams as $team): ?>
-                            <option value="<?= htmlspecialchars($team['name']) ?>"><?= htmlspecialchars($team['name']) ?></option>
+                            <option value="<?= htmlspecialchars($team['name'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($team['name'], ENT_QUOTES, 'UTF-8') ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
