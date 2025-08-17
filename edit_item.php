@@ -112,6 +112,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($value === '') {
                     $setClauses[] = "{$field} = NULL";
                 } else {
+                    // Special handling for time fields in races table
+                    if ($spec['type'] === 'time' && $field === 'start_time' && $updateTable === 'races' && $value) {
+                        // Get the event date from the selected event_id
+                        $event_id = $_POST['event_id'] ?? null;
+                        if ($event_id) {
+                            $eventStmt = $conn->prepare("SELECT event_date FROM events WHERE id = ?");
+                            $eventStmt->execute([$event_id]);
+                            $event = $eventStmt->fetch(PDO::FETCH_ASSOC);
+                            
+                            if ($event && $event['event_date']) {
+                                // Combine event date with the entered time
+                                $value = $event['event_date'] . ' ' . $value . ':00';
+                            }
+                        }
+                    }
+                    
                     $setClauses[] = "{$field} = ?";
                     $params[] = $value;
                 }

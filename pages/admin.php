@@ -785,7 +785,7 @@ $teams = $conn->query("SELECT * FROM teams ORDER BY name")->fetchAll(PDO::FETCH_
                 <form method="post" class="mb-4" id="add_race_participant_form">
                     <input type="hidden" name="action" value="add_race_participant">
                     <div class="row g-3">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label for="filter_event_id" class="form-label">Event (optional)</label>
                             <select class="form-select" id="filter_event_id">
                                 <option value="">-- All Events --</option>
@@ -793,6 +793,19 @@ $teams = $conn->query("SELECT * FROM teams ORDER BY name")->fetchAll(PDO::FETCH_
                                 $events = $conn->query("SELECT id, name FROM events ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
                                 foreach ($events as $event) {
                                     echo "<option value=\"{$event['id']}\">{$event['name']}</option>";
+                                }
+                                ?>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-3">
+                            <label for="filter_team_id" class="form-label">Verein (optional)</label>
+                            <select class="form-select" id="filter_team_id">
+                                <option value="">-- Alle Vereine --</option>
+                                <?php
+                                $teams = $conn->query("SELECT id, name FROM teams ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+                                foreach ($teams as $team) {
+                                    echo "<option value=\"{$team['id']}\">{$team['name']}</option>";
                                 }
                                 ?>
                             </select>
@@ -821,9 +834,10 @@ $teams = $conn->query("SELECT * FROM teams ORDER BY name")->fetchAll(PDO::FETCH_
                             <select class="form-select" id="participant_id" name="participant_id[]" multiple required>
                                 <option value="">Select Participants</option>
                                 <?php 
-                                $participants = $conn->query("SELECT id, name FROM participants ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+                                $participants = $conn->query("SELECT p.id, p.name, p.birth_year, t.id as team_id, t.name as team_name FROM participants p JOIN teams t ON p.team_id = t.id ORDER BY t.name, p.name")->fetchAll(PDO::FETCH_ASSOC);
                                 foreach ($participants as $participant) {
-                                    echo "<option value=\"{$participant['id']}\">{$participant['name']}</option>";
+                                    $birthYearDisplay = $participant['birth_year'] ? " ({$participant['birth_year']})" : "";
+                                    echo "<option value=\"{$participant['id']}\" data-team-id=\"{$participant['team_id']}\">{$participant['team_name']} - {$participant['name']}{$birthYearDisplay}</option>";
                                 }
                                 ?>
                             </select>
@@ -924,25 +938,65 @@ $teams = $conn->query("SELECT * FROM teams ORDER BY name")->fetchAll(PDO::FETCH_
                     
                     // Filter participants based on selected team
                     document.getElementById('filter_team_id').addEventListener('change', function() {
-                        const teamId = this.value;
+                        filterParticipants();
+                    });
+                    
+                    // Filter participants based on selected event
+                    document.getElementById('filter_event_id').addEventListener('change', function() {
+                        filterParticipants();
+                    });
+                    
+                    // Function to filter participants based on both team and event
+                    function filterParticipants() {
+                        const selectedTeam = document.getElementById('filter_team_id').value;
+                        const selectedEvent = document.getElementById('filter_event_id').value;
                         const participantSelect = document.getElementById('participant_id');
                         const options = participantSelect.querySelectorAll('option');
+                        
+                        console.log('Filtering participants...');
+                        console.log('Selected team:', selectedTeam);
+                        console.log('Selected event:', selectedEvent);
+                        console.log('Total options:', options.length);
+                        
+                        let visibleCount = 0;
+                        let hiddenCount = 0;
                         
                         for (let i = 0; i < options.length; i++) {
                             const option = options[i];
                             if (option.value === '') {
                                 // Always show the placeholder option
                                 option.style.display = '';
-                            } else if (!teamId || option.getAttribute('data-team') === teamId) {
-                                option.style.display = '';
+                                visibleCount++;
                             } else {
-                                option.style.display = 'none';
+                                let showOption = true;
+                                
+                                // Filter by team if selected
+                                if (selectedTeam) {
+                                    const teamId = option.getAttribute('data-team-id');
+                                    console.log('Option:', option.textContent, 'Team ID:', teamId, 'Selected Team ID:', selectedTeam, 'Match:', teamId === selectedTeam);
+                                    
+                                    if (teamId != selectedTeam) {
+                                        showOption = false;
+                                    }
+                                }
+                                
+                                // Filter by event if selected (this would need additional data attributes)
+                                // For now, we'll focus on team filtering
+                                
+                                option.style.display = showOption ? '' : 'none';
+                                if (showOption) {
+                                    visibleCount++;
+                                } else {
+                                    hiddenCount++;
+                                }
                             }
                         }
                         
-                        // Reset selection
+                        console.log('Visible options:', visibleCount, 'Hidden options:', hiddenCount);
+                        
+                        // Reset selection when filters change
                         participantSelect.value = '';
-                    });
+                    }
                 </script>
                 
                 <h4>Existing Race Participants</h4>
