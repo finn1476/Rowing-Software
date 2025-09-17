@@ -112,42 +112,59 @@ $raceId = $race['id'];
 // Alle Boote für das Rennen holen
 $boats = $conn->query("SELECT lane, boat_number FROM race_participants WHERE race_id = $raceId GROUP BY lane, boat_number ORDER BY lane, boat_number")->fetchAll(PDO::FETCH_ASSOC);
 
-// Bereits eingetragene Zielzeiten prüfen
+// Bereits eingetragene Zielzeiten oder DNF-Status prüfen
 $existingSet = array();
+$dnfSet = array();
 foreach ($boats as $b) {
     $lane = $b['lane'];
     $boatNumber = $b['boat_number'];
-    $count = $conn->query("SELECT COUNT(*) FROM race_participants WHERE race_id = $raceId AND lane = $lane AND (boat_number = " . $conn->quote($boatNumber) . " OR (boat_number IS NULL AND " . ($boatNumber === '' ? '1' : '0') . ")) AND finish_time IS NOT NULL")->fetchColumn();
+    $count = $conn->query("SELECT COUNT(*) FROM race_participants WHERE race_id = $raceId AND lane = $lane AND (boat_number = " . $conn->quote($boatNumber) . " OR (boat_number IS NULL AND " . ($boatNumber === '' ? '1' : '0') . ")) AND (finish_time IS NOT NULL OR dnf = 1)")->fetchColumn();
     $total = $conn->query("SELECT COUNT(*) FROM race_participants WHERE race_id = $raceId AND lane = $lane AND (boat_number = " . $conn->quote($boatNumber) . " OR (boat_number IS NULL AND " . ($boatNumber === '' ? '1' : '0') . "))")->fetchColumn();
     if ($count == $total && $total > 0) {
         $existingSet[$lane.'_'.$boatNumber] = true;
+        // Prüfen ob DNF
+        $dnfCount = $conn->query("SELECT COUNT(*) FROM race_participants WHERE race_id = $raceId AND lane = $lane AND (boat_number = " . $conn->quote($boatNumber) . " OR (boat_number IS NULL AND " . ($boatNumber === '' ? '1' : '0') . ")) AND dnf = 1")->fetchColumn();
+        if ($dnfCount == $total) {
+            $dnfSet[$lane.'_'.$boatNumber] = true;
+        }
     }
 }
 
-// Zielzeit speichern
+// Zielzeit oder DNF speichern
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['lane'], $_POST['boat_number'])) {
     $lane = (int)$_POST['lane'];
     $boatNumber = $_POST['boat_number'];
     $ids = $conn->query("SELECT id FROM race_participants WHERE race_id = $raceId AND lane = $lane AND (boat_number = " . $conn->quote($boatNumber) . " OR (boat_number IS NULL AND " . ($boatNumber === '' ? '1' : '0') . "))")->fetchAll(PDO::FETCH_COLUMN);
-    if (!empty($race['actual_start_time'])) {
-        $nowDT = new DateTime('now', new DateTimeZone('Europe/Berlin'));
-        $startDT = new DateTime($race['actual_start_time'], new DateTimeZone('Europe/Berlin'));
-        $seconds = $nowDT->getTimestamp() - $startDT->getTimestamp();
-        if ($seconds < 0) $seconds = 0;
-        $hours = floor($seconds / 3600);
-        $minutes = floor(($seconds % 3600) / 60);
-        $secs = $seconds % 60;
-        $time = sprintf('%02d:%02d:%02d', $hours, $minutes, $secs);
+    
+    if (isset($_POST['dnf']) && $_POST['dnf'] == '1') {
+        // DNF setzen
+        foreach ($ids as $rpId) {
+            $stmt = $conn->prepare("UPDATE race_participants SET dnf = 1, finish_time = NULL, finish_seconds = NULL WHERE id = :rp_id");
+            $stmt->bindParam(':rp_id', $rpId);
+            $stmt->execute();
+        }
     } else {
-        $seconds = null;
-        $time = null;
-    }
-    foreach ($ids as $rpId) {
-        $stmt = $conn->prepare("UPDATE race_participants SET finish_time = :time, finish_seconds = :seconds WHERE id = :rp_id");
-        $stmt->bindParam(':time', $time);
-        $stmt->bindParam(':seconds', $seconds);
-        $stmt->bindParam(':rp_id', $rpId);
-        $stmt->execute();
+        // Zielzeit setzen
+        if (!empty($race['actual_start_time'])) {
+            $nowDT = new DateTime('now', new DateTimeZone('Europe/Berlin'));
+            $startDT = new DateTime($race['actual_start_time'], new DateTimeZone('Europe/Berlin'));
+            $seconds = $nowDT->getTimestamp() - $startDT->getTimestamp();
+            if ($seconds < 0) $seconds = 0;
+            $hours = floor($seconds / 3600);
+            $minutes = floor(($seconds % 3600) / 60);
+            $secs = $seconds % 60;
+            $time = sprintf('%02d:%02d:%02d', $hours, $minutes, $secs);
+        } else {
+            $seconds = null;
+            $time = null;
+        }
+        foreach ($ids as $rpId) {
+            $stmt = $conn->prepare("UPDATE race_participants SET finish_time = :time, finish_seconds = :seconds, dnf = 0 WHERE id = :rp_id");
+            $stmt->bindParam(':time', $time);
+            $stmt->bindParam(':seconds', $seconds);
+            $stmt->bindParam(':rp_id', $rpId);
+            $stmt->execute();
+        }
     }
     header('Location: finish_race.php');
     exit;
@@ -252,12 +269,17 @@ if ($showDebug) {
         td.lane, td.bug { font-size: 1.3rem; font-weight: bold; color: #0074B7; letter-spacing: 1px; background: #e5f6ff; border-radius: 6px; border: 2px solid #b3d8f6; text-align: center; }
         td.lane { width: 70px; }
         td.bug { width: 100px; }
+        td.status { width: 120px; text-align: center; font-weight: bold; }
         td.aktion { width: 1%; white-space: nowrap; text-align: center; padding-left: 0; padding-right: 0; }
         form { margin: 0; }
         .btn { background: #0074B7; color: #fff; border: none; padding: 12px 18px; border-radius: 7px; cursor: pointer; font-size: 1.1rem; font-weight: bold; box-shadow: 0 2px 8px #0002; transition: background 0.2s; }
         .btn:active { background: #005a8c; }
         .btn:disabled { background: #aaa; cursor: not-allowed; }
         .done { color: #0a0; font-weight: bold; font-size: 1rem; }
+        .dnf { color: #d00; font-weight: bold; font-size: 1rem; }
+        .pending { color: #666; font-weight: bold; font-size: 1rem; }
+        .dnf-btn { background: #d00; }
+        .dnf-btn:active { background: #a00; }
         .chat-message .sender { font-weight: bold; margin-right: 6px; }
         .chat-message .time { color: #888; font-size: 0.9em; margin-left: 6px; }
     </style>
@@ -269,21 +291,51 @@ if ($showDebug) {
     <div class="marker">Ziel-Eintrag für alle Boote</div>
     <table>
         <thead>
-            <tr><th>Lane</th><th>Bugnummer</th><th>Aktion</th></tr>
+            <tr><th>Lane</th><th>Bugnummer</th><th>Status</th><th>Aktion</th></tr>
         </thead>
         <tbody>
         <?php foreach ($boats as $b): $key = $b['lane'].'_'.$b['boat_number']; ?>
             <tr>
                 <td class="lane"><?= htmlspecialchars($b['lane']) ?></td>
                 <td class="bug"><?= htmlspecialchars($b['boat_number']) ?></td>
+                <td class="status">
+                    <?php if (!empty($existingSet[$key])): ?>
+                        <?php if (!empty($dnfSet[$key])): ?>
+                            <span class="dnf">DNF</span>
+                        <?php else: ?>
+                            <span class="done">Im Ziel</span>
+                        <?php endif; ?>
+                    <?php else: ?>
+                        <span class="pending">Ausstehend</span>
+                    <?php endif; ?>
+                </td>
                 <td class="aktion">
                     <?php if (!empty($existingSet[$key])): ?>
-                        <span class="done">Im Ziel</span>
+                        <?php if (!empty($dnfSet[$key])): ?>
+                            <form method="post" style="display:inline;">
+                                <input type="hidden" name="lane" value="<?= $b['lane'] ?>">
+                                <input type="hidden" name="boat_number" value="<?= $b['boat_number'] ?>">
+                                <button class="btn" type="submit">Ziel</button>
+                            </form>
+                        <?php else: ?>
+                            <form method="post" style="display:inline;">
+                                <input type="hidden" name="lane" value="<?= $b['lane'] ?>">
+                                <input type="hidden" name="boat_number" value="<?= $b['boat_number'] ?>">
+                                <input type="hidden" name="dnf" value="1">
+                                <button class="btn dnf-btn" type="submit">DNF</button>
+                            </form>
+                        <?php endif; ?>
                     <?php else: ?>
-                        <form method="post">
+                        <form method="post" style="display:inline;">
                             <input type="hidden" name="lane" value="<?= $b['lane'] ?>">
                             <input type="hidden" name="boat_number" value="<?= $b['boat_number'] ?>">
                             <button class="btn" type="submit">Ziel</button>
+                        </form>
+                        <form method="post" style="display:inline; margin-left: 5px;">
+                            <input type="hidden" name="lane" value="<?= $b['lane'] ?>">
+                            <input type="hidden" name="boat_number" value="<?= $b['boat_number'] ?>">
+                            <input type="hidden" name="dnf" value="1">
+                            <button class="btn dnf-btn" type="submit">DNF</button>
                         </form>
                     <?php endif; ?>
                 </td>

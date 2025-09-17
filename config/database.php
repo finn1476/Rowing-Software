@@ -88,6 +88,7 @@ function initializeDatabase() {
                 position INT,
                 boat_number VARCHAR(32) DEFAULT NULL COMMENT 'Bugnummer',
                 boat_seat INT DEFAULT NULL COMMENT 'Sitzplatz im Boot',
+                dnf BOOLEAN DEFAULT FALSE COMMENT 'Did Not Finish',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (race_id) REFERENCES races(id) ON DELETE CASCADE,
                 FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
@@ -234,6 +235,18 @@ function initializeDatabase() {
             }
         } catch (PDOException $e) {
             error_log("Error checking/adding boat_seat column: " . $e->getMessage());
+        }
+        
+        // Add dnf column if it doesn't exist
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM race_participants LIKE 'dnf'");
+            $stmt->execute();
+            $columnExists = $stmt->fetchColumn();
+            if (!$columnExists) {
+                $conn->exec("ALTER TABLE race_participants ADD COLUMN dnf BOOLEAN DEFAULT FALSE COMMENT 'Did Not Finish' AFTER boat_seat");
+            }
+        } catch (PDOException $e) {
+            error_log("Error checking/adding dnf column: " . $e->getMessage());
         }
         
         // Add actual_start_time column if it doesn't exist
