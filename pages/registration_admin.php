@@ -550,6 +550,9 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     }
                                     ?>
                                 </small>
+                                <br><button type="button" class="btn btn-info" style="padding: 2px 8px; font-size: 11px; margin-top: 5px;" onclick="toggleCrewDetails(<?= $boat['id'] ?>)">
+                                    👥 Details anzeigen
+                                </button>
                                 <?php endif; ?>
                             </td>
                             <td><?= htmlspecialchars($boat['boat_name']) ?></td>
@@ -572,6 +575,95 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                         <option value="used" <?= $boat['status'] === 'used' ? 'selected' : '' ?>>Verwendet</option>
                                     </select>
                                 </form>
+                            </td>
+                        </tr>
+                        <!-- Crew Details Row -->
+                        <tr id="crew-details-<?= $boat['id'] ?>" style="display: none; background: #f8f9fa;">
+                            <td colspan="7" style="padding: 20px;">
+                                <div style="background: white; padding: 20px; border-radius: 10px; border: 1px solid #e1e5e9;">
+                                    <h4 style="margin: 0 0 15px 0; color: #333; display: flex; align-items: center;">
+                                        <span style="margin-right: 10px;">👥</span>
+                                        Crew-Details: <?= htmlspecialchars($boat['boat_name']) ?> (<?= $boat['boat_type'] ?>)
+                                    </h4>
+                                    
+                                    <?php if ($boat['crew_members']): ?>
+                                        <?php 
+                                        $crew = json_decode($boat['crew_members'], true);
+                                        $crew_count = count($crew);
+                                        ?>
+                                        <div style="margin-bottom: 15px;">
+                                            <strong>Anzahl Crew-Mitglieder:</strong> <?= $crew_count ?> 
+                                            <span style="color: #666; margin-left: 10px;">
+                                                (Erforderlich: <?= 
+                                                    $boat['boat_type'] === '1x' ? 1 :
+                                                    ($boat['boat_type'] === '2x' ? 2 :
+                                                    ($boat['boat_type'] === '2x+' ? 3 :
+                                                    ($boat['boat_type'] === '3x' ? 3 :
+                                                    ($boat['boat_type'] === '3x+' ? 4 :
+                                                    ($boat['boat_type'] === '4x' ? 4 :
+                                                    ($boat['boat_type'] === '4x+' ? 5 :
+                                                    ($boat['boat_type'] === '8-' ? 8 : 1)))))))
+                                                ?>)
+                                            </span>
+                                        </div>
+                                        
+                                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px;">
+                                            <?php foreach ($crew as $index => $member): ?>
+                                            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea;">
+                                                <h5 style="margin: 0 0 10px 0; color: #333;">
+                                                    Crew-Mitglied <?= $index + 1 ?>
+                                                </h5>
+                                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
+                                                    <div>
+                                                        <strong>Name:</strong><br>
+                                                        <?= htmlspecialchars($member['first_name'] . ' ' . $member['last_name']) ?>
+                                                    </div>
+                                                    <div>
+                                                        <strong>Geburtsjahr:</strong><br>
+                                                        <?= htmlspecialchars($member['birth_year']) ?>
+                                                    </div>
+                                                    <div>
+                                                        <strong>Verein:</strong><br>
+                                                        <span style="color: #667eea; font-weight: 600;">
+                                                            <?= htmlspecialchars($member['club'] ?? 'Unbekannt') ?>
+                                                        </span>
+                                                    </div>
+                                                    <div>
+                                                        <strong>Alter:</strong><br>
+                                                        <?= date('Y') - $member['birth_year'] ?> Jahre
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <div style="color: #666; font-style: italic; padding: 20px; text-align: center; background: #f8f9fa; border-radius: 8px;">
+                                            Keine Crew-Details verfügbar
+                                        </div>
+                                    <?php endif; ?>
+                                    
+                                    <!-- Contact Information -->
+                                    <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e1e5e9;">
+                                        <h5 style="margin: 0 0 10px 0; color: #333;">📞 Kontakt-Informationen</h5>
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
+                                            <div>
+                                                <strong>Melder:</strong> <?= htmlspecialchars($boat['captain_name']) ?>
+                                            </div>
+                                            <div>
+                                                <strong>Email:</strong> 
+                                                <?= $boat['contact_email'] ? htmlspecialchars($boat['contact_email']) : 'Nicht angegeben' ?>
+                                            </div>
+                                            <div>
+                                                <strong>Telefon:</strong> 
+                                                <?= $boat['contact_phone'] ? htmlspecialchars($boat['contact_phone']) : 'Nicht angegeben' ?>
+                                            </div>
+                                            <div>
+                                                <strong>Anmeldung:</strong> 
+                                                <?= date('d.m.Y H:i', strtotime($boat['created_at'])) ?>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -662,5 +754,22 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
     </div>
+
+    <script>
+        function toggleCrewDetails(boatId) {
+            const detailsRow = document.getElementById('crew-details-' + boatId);
+            const button = event.target;
+            
+            if (detailsRow.style.display === 'none' || detailsRow.style.display === '') {
+                detailsRow.style.display = 'table-row';
+                button.textContent = '👥 Details ausblenden';
+                button.style.background = '#dc3545';
+            } else {
+                detailsRow.style.display = 'none';
+                button.textContent = '👥 Details anzeigen';
+                button.style.background = '#4facfe';
+            }
+        }
+    </script>
 </body>
 </html> 

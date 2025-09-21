@@ -36,7 +36,7 @@ function validateAndSanitizeInput($input, $type = 'string', $maxLength = 255) {
             $year = filter_var($input, FILTER_VALIDATE_INT);
             return ($year >= 1900 && $year <= date('Y')) ? $year : null;
         case 'boat_type':
-            $allowed_types = ['1x', '2x', '3x+', '4x'];
+            $allowed_types = ['1x', '2x', '2x+', '3x', '3x+', '4x', '4x+', '8-'];
             return in_array($input, $allowed_types) ? $input : null;
         case 'experience_level':
             $allowed_levels = ['beginner', 'intermediate', 'advanced'];
@@ -222,8 +222,12 @@ function getRequiredCrewCount($boat_type) {
     switch ($boat_type) {
         case '1x': return 1; // 1 crew member (no melder in boat)
         case '2x': return 2; // 2 crew members
-        case '3x+': return 3; // 3 crew members
+        case '2x+': return 3; // 3 crew members
+        case '3x': return 3; // 3 crew members
+        case '3x+': return 4; // 4 crew members
         case '4x': return 4; // 4 crew members
+        case '4x+': return 5; // 5 crew members (4 Ruderer + 1 Steuermann)
+        case '8-': return 8; // 8 crew members
         default: return 1;
     }
 }
@@ -492,8 +496,12 @@ function getRequiredCrewCount($boat_type) {
                                 <option value="">Bitte wählen</option>
                                 <option value="1x">1x (Einer)</option>
                                 <option value="2x">2x (Zweier)</option>
-                                <option value="3x+">3x+ (Dreier und mehr)</option>
+                                <option value="2x+">2x+ (Zweier mit Steuermann)</option>
+                                <option value="3x">3x (Dreier)</option>
+                                <option value="3x+">3x+ (Dreier mit Steuermann)</option>
                                 <option value="4x">4x (Vierer)</option>
+                                <option value="4x+">4x+ (Vierer mit Steuermann)</option>
+                                <option value="8-">8- (Achter)</option>
                             </select>
                         </div>
                         
@@ -608,10 +616,22 @@ function getRequiredCrewCount($boat_type) {
                                 <input type="checkbox" name="preferred_types[]" value="2x"> 2x (Zweier)
                             </label>
                             <label class="type-checkbox">
-                                <input type="checkbox" name="preferred_types[]" value="3x+"> 3x+ (Dreier und mehr)
+                                <input type="checkbox" name="preferred_types[]" value="2x+"> 2x+ (Zweier mit Steuermann)
+                            </label>
+                            <label class="type-checkbox">
+                                <input type="checkbox" name="preferred_types[]" value="3x"> 3x (Dreier)
+                            </label>
+                            <label class="type-checkbox">
+                                <input type="checkbox" name="preferred_types[]" value="3x+"> 3x+ (Dreier mit Steuermann)
                             </label>
                             <label class="type-checkbox">
                                 <input type="checkbox" name="preferred_types[]" value="4x"> 4x (Vierer)
+                            </label>
+                            <label class="type-checkbox">
+                                <input type="checkbox" name="preferred_types[]" value="4x+"> 4x+ (Vierer mit Steuermann)
+                            </label>
+                            <label class="type-checkbox">
+                                <input type="checkbox" name="preferred_types[]" value="8-"> 8- (Achter)
                             </label>
                         </div>
                     </div>
@@ -671,13 +691,29 @@ function getRequiredCrewCount($boat_type) {
                     requiredCount = 2;
                     requirementText = '(2 Crew-Mitglieder erforderlich)';
                     break;
-                case '3x+':
+                case '2x+':
                     requiredCount = 3;
                     requirementText = '(3 Crew-Mitglieder erforderlich)';
+                    break;
+                case '3x':
+                    requiredCount = 3;
+                    requirementText = '(3 Crew-Mitglieder erforderlich)';
+                    break;
+                case '3x+':
+                    requiredCount = 4;
+                    requirementText = '(4 Crew-Mitglieder erforderlich)';
                     break;
                 case '4x':
                     requiredCount = 4;
                     requirementText = '(4 Crew-Mitglieder erforderlich)';
+                    break;
+                case '4x+':
+                    requiredCount = 5;
+                    requirementText = '(5 Crew-Mitglieder erforderlich)';
+                    break;
+                case '8-':
+                    requiredCount = 8;
+                    requirementText = '(8 Crew-Mitglieder erforderlich)';
                     break;
                 default:
                     requiredCount = 1;

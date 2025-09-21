@@ -15,24 +15,22 @@ try {
         case 'get_race_participants':
             $race_id = $_GET['race_id'] ?? 0;
             
-            // Get participants for a specific race (grouped by boat number and lane)
+            // Get participants for a specific race (grouped by boat number and lane only)
             $stmt = $conn->prepare("
                 SELECT 
                        rp.boat_number, 
                        rp.lane,
-                       t.id as team_id, 
-                       t.name as team_name, 
                        rb.club_name, 
                        rb.boat_name,
                        rb.id as registration_boat_id,
                        rb.crew_members,
-                       GROUP_CONCAT(DISTINCT CONCAT(p.name, ' (', p.birth_year, ')') ORDER BY p.name SEPARATOR ', ') as participants
+                       GROUP_CONCAT(DISTINCT CONCAT(p.name, ' (', p.birth_year, ') - ', t.name) ORDER BY p.name SEPARATOR ', ') as participants
                 FROM race_participants rp
                 JOIN participants p ON rp.participant_id = p.id
                 JOIN teams t ON rp.team_id = t.id
                 LEFT JOIN registration_boats rb ON rp.registration_boat_id = rb.id
                 WHERE rp.race_id = ?
-                GROUP BY rp.boat_number, rp.lane, t.id, t.name, rb.club_name, rb.boat_name, rb.id, rb.crew_members
+                GROUP BY rp.boat_number, rp.lane, rb.club_name, rb.boat_name, rb.id, rb.crew_members
                 ORDER BY rp.lane, rp.boat_number
             ");
             $stmt->execute([$race_id]);

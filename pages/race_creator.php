@@ -70,25 +70,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $boat = $stmt->fetch(PDO::FETCH_ASSOC);
                         
                         if ($boat) {
-                            // Check if team already exists
-                            $stmt = $conn->prepare("SELECT id FROM teams WHERE name = ?");
-                            $stmt->execute([$boat['club_name']]);
-                            $existing_team = $stmt->fetch(PDO::FETCH_ASSOC);
-                            
-                            if ($existing_team) {
-                                $team_id = $existing_team['id'];
-                            } else {
-                                // Create new team only if it doesn't exist
-                                $stmt = $conn->prepare("INSERT INTO teams (name, description) VALUES (?, ?)");
-                                $stmt->execute([$boat['club_name'], 'Boot: ' . $boat['boat_name']]);
-                                $team_id = $conn->lastInsertId();
-                            }
-                            
                             // Add crew members as participants
                             if ($boat['crew_members']) {
                                 $crew = json_decode($boat['crew_members'], true);
                                 foreach ($crew as $member) {
                                     $full_name = $member['first_name'] . ' ' . $member['last_name'];
+                                    
+                                    // Get the club for this specific member (fallback to boat club_name if not set)
+                                    $member_club = $member['club'] ?? $boat['club_name'];
+                                    
+                                    // Check if team already exists for this member's club
+                                    $stmt = $conn->prepare("SELECT id FROM teams WHERE name = ?");
+                                    $stmt->execute([$member_club]);
+                                    $existing_team = $stmt->fetch(PDO::FETCH_ASSOC);
+                                    
+                                    if ($existing_team) {
+                                        $team_id = $existing_team['id'];
+                                    } else {
+                                        // Create new team only if it doesn't exist
+                                        $stmt = $conn->prepare("INSERT INTO teams (name, description) VALUES (?, ?)");
+                                        $stmt->execute([$member_club, 'Boot: ' . $boat['boat_name'] . ' - Teilnehmer: ' . $full_name]);
+                                        $team_id = $conn->lastInsertId();
+                                    }
                                     
                                     // Check if participant already exists
                                     $stmt = $conn->prepare("SELECT id FROM participants WHERE name = ? AND birth_year = ?");
@@ -197,8 +200,12 @@ function getBoatTypeParticipantCount($boat_type) {
     switch ($boat_type) {
         case '1x': return 1;
         case '2x': return 2;
-        case '3x+': return 3;
+        case '2x+': return 3;
+        case '3x': return 3;
+        case '3x+': return 4;
         case '4x': return 4;
+        case '4x+': return 5;
+        case '8-': return 8;
         default: return 1;
     }
 }
@@ -207,8 +214,12 @@ function getBoatTypeName($boat_type) {
     switch ($boat_type) {
         case '1x': return 'Einer';
         case '2x': return 'Zweier';
-        case '3x+': return 'Dreier und mehr';
+        case '2x+': return 'Zweier mit Steuermann';
+        case '3x': return 'Dreier';
+        case '3x+': return 'Dreier mit Steuermann';
         case '4x': return 'Vierer';
+        case '4x+': return 'Vierer mit Steuermann';
+        case '8-': return 'Achter';
         default: return $boat_type;
     }
 }
@@ -479,7 +490,7 @@ function getBoatTypeName($boat_type) {
         </div>
 
         <!-- Boat Type Sections -->
-        <?php foreach (['1x', '2x', '3x+', '4x'] as $boat_type): ?>
+        <?php foreach (['1x', '2x', '2x+', '3x', '3x+', '4x', '4x+', '8-'] as $boat_type): ?>
         <div class="boat-type-section" id="section-<?= $boat_type ?>">
             <div class="boat-type-header">
                 <h2><?= $boat_type ?> - <?= getBoatTypeName($boat_type) ?></h2>
@@ -635,19 +646,35 @@ function getBoatTypeName($boat_type) {
                     <h3>Bestehende Rennen</h3>
                                     <?php 
                 $event_races = array_filter($existing_races, function($race) use ($boat_type) {
-                    // More flexible matching for boat types
-                    $race_name_lower = strtolower($race['name']);
-                    $boat_type_lower = strtolower($boat_type);
+                    // More precise matching for boat types
+                    $race_name_trimmed = trim($race['name']);
+                    $boat_type_trimmed = trim($boat_type);
                     
-                    // Check for exact match or partial match
-                    $matches = $race_name_lower === $boat_type_lower || 
-                              strpos($race_name_lower, $boat_type_lower) !== false ||
-                              strpos($race_name_lower, str_replace('+', '', $boat_type_lower)) !== false;
+                    // Check for exact match first
+                    if ($race_name_trimmed === $boat_type_trimmed) {
+                        return true;
+                    }
                     
-                    // Debug output
-                    error_log("Race: '{$race['name']}' vs Boat Type: '{$boat_type}' = " . ($matches ? 'MATCH' : 'NO MATCH'));
+                    // Check if race name starts with boat type followed by space or end
+                    if (strpos($race_name_trimmed, $boat_type_trimmed) === 0) {
+                        // Make sure it's not a partial match (e.g., "2x" should not match "2x+")
+                        $next_char = substr($race_name_trimmed, strlen($boat_type_trimmed), 1);
+                        if ($next_char === '' || $next_char === ' ' || $next_char === '-') {
+                            return true;
+                        }
+                    }
                     
-                    return $matches;
+                    // Check for boat type within race name (for cases like "2x Rennen")
+                    if (strpos($race_name_trimmed, $boat_type_trimmed) !== false) {
+                        // Make sure it's not a partial match
+                        $pos = strpos($race_name_trimmed, $boat_type_trimmed);
+                        $next_char = substr($race_name_trimmed, $pos + strlen($boat_type_trimmed), 1);
+                        if ($next_char === '' || $next_char === ' ' || $next_char === '-') {
+                            return true;
+                        }
+                    }
+                    
+                    return false;
                 });
                 ?>
                     <?php if (!$selected_event_id): ?>
@@ -686,8 +713,12 @@ function getBoatTypeName($boat_type) {
             const names = {
                 '1x': 'Einer',
                 '2x': 'Zweier',
-                '3x+': 'Dreier und mehr',
-                '4x': 'Vierer'
+                '2x+': 'Zweier mit Steuermann',
+                '3x': 'Dreier',
+                '3x+': 'Dreier mit Steuermann',
+                '4x': 'Vierer',
+                '4x+': 'Vierer mit Steuermann',
+                '8-': 'Achter'
             };
             return names[boatType] || boatType;
         }
@@ -729,7 +760,7 @@ function getBoatTypeName($boat_type) {
             // The event selection is handled by PHP based on URL parameters
             
             // Drag and drop for each boat type
-            ['1x', '2x', '3x+', '4x'].forEach(boatType => {
+            ['1x', '2x', '2x+', '3x', '3x+', '4x', '4x+', '8-'].forEach(boatType => {
                 const availableContainer = document.getElementById(`available-${boatType}`);
                 const raceContainer = document.getElementById(`race-${boatType}`);
                 const raceForm = document.getElementById(`race-form-${boatType}`);
@@ -1018,13 +1049,13 @@ function getBoatTypeName($boat_type) {
                     if (data.success) {
                         const container = document.getElementById(`race-${raceId}-participants`);
                         if (container) {
-                            const participantsHtml = data.participants.map(p => 
-                                `<div class="participant-item">
-                                    <strong>${p.team_name}</strong>
-                                    <br><small>${p.crew_with_clubs || p.participants}</small>
-                                    <br><small>Boot ${p.boat_number}, Bahn ${p.lane}</small>
-                                </div>`
-                            ).join('');
+                        const participantsHtml = data.participants.map(p => 
+                            `<div class="participant-item">
+                                <strong>Boot ${p.boat_number}, Bahn ${p.lane}</strong>
+                                <br><small>${p.crew_with_clubs || p.participants}</small>
+                                ${p.boat_name ? `<br><small>Boot: ${p.boat_name}</small>` : ''}
+                            </div>`
+                        ).join('');
                             container.innerHTML = participantsHtml;
                         }
                     }

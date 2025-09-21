@@ -6,7 +6,7 @@
     <title>Rowing Regatta Management</title>
     <link rel="stylesheet" href="css/styles.css">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
     <?php
@@ -32,6 +32,9 @@
                                 <a class="nav-link" href="index.php?page=upcoming_races">Upcoming Races</a>
                             </li>
                             <li class="nav-item">
+                                <a class="nav-link" href="index.php?page=ruderer_search">Ruderer-Suche</a>
+                            </li>
+                            <li class="nav-item">
                                 <a class="nav-link" href="index.php?page=historical_data">Historical Data</a>
                             </li>
                             <li class="nav-item">
@@ -55,6 +58,9 @@
             switch ($page) {
                 case 'upcoming_races':
                     include_once 'pages/upcoming_races.php';
+                    break;
+                case 'ruderer_search':
+                    include_once 'pages/ruderer_search.php';
                     break;
                 case 'results':
                     include_once 'pages/results.php';
