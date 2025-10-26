@@ -13,6 +13,28 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
 
 $conn = getDbConnection();
 
+// Debug variable to collect all debug information
+$debug_info = [];
+$debug_enabled = isset($_GET['debug']) && $_GET['debug'] == '1';
+
+// Debug function to add messages to debug info
+function addDebug($message) {
+    global $debug_info, $debug_enabled;
+    if ($debug_enabled) {
+        $debug_info[] = date('H:i:s') . ' - ' . $message;
+    }
+    error_log($message); // Always log to error log
+}
+
+// Safe debug function for arrays
+function addDebugArray($label, $array) {
+    global $debug_info, $debug_enabled;
+    if ($debug_enabled) {
+        $debug_info[] = date('H:i:s') . ' - ' . $label . ': ' . json_encode($array, JSON_PRETTY_PRINT);
+    }
+    error_log($label . ': ' . json_encode($array));
+}
+
 // Get selected event from URL
 $selected_event_id = $_GET['event_id'] ?? null;
 
@@ -30,7 +52,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif (empty($participant_ids)) {
                     $participant_ids = [];
                 }
-                $club_name = $_POST['club_name'];
+                // DEBUG: Log all participant IDs
+                addDebug("=== SINGLE CREATOR DEBUG START ===");
+                addDebug("DEBUG: Participant IDs: " . implode(', ', $participant_ids));
+                
+                // Get club name from first participant
+                $stmt_participant = $conn->prepare("SELECT club_name FROM registration_singles WHERE id = ?");
+                $stmt_participant->execute([$participant_ids[0]]);
+                $first_participant = $stmt_participant->fetch(PDO::FETCH_ASSOC);
+                
+                addDebug("DEBUG: First participant ID: {$participant_ids[0]}");
+                addDebugArray("DEBUG: First participant data", $first_participant);
+                
+                // Try to get club name from first participant, if null try to get from any participant
+                $club_name = $first_participant['club_name'] ?? null;
+                addDebug("DEBUG: Initial club_name from first participant: '" . ($club_name ?? 'NULL') . "'");
+                
+                if (empty($club_name)) {
+                    addDebug("DEBUG: First participant club_name is empty, searching other participants...");
+                    // Try to get club name from any of the participants
+                    foreach ($participant_ids as $pid) {
+                        $stmt_club = $conn->prepare("SELECT club_name FROM registration_singles WHERE id = ? AND club_name IS NOT NULL AND club_name != ''");
+                        $stmt_club->execute([$pid]);
+                        $club_data = $stmt_club->fetch(PDO::FETCH_ASSOC);
+                        addDebugArray("DEBUG: Participant $pid club search result", $club_data);
+                        if ($club_data && !empty($club_data['club_name'])) {
+                            $club_name = $club_data['club_name'];
+                            addDebug("DEBUG: Found club_name '$club_name' from participant $pid");
+                            break;
+                        }
+                    }
+                }
+                
+                // Final fallback - use a default club name
+                if (empty($club_name)) {
+                    $club_name = 'RC Stolzenau'; // Default club name
+                    addDebug("DEBUG: Using fallback club_name: '$club_name'");
+                }
+                
+                addDebug("DEBUG: Final club_name for boat: '$club_name'");
+                
                 
                 if (empty($participant_ids)) {
                     $message = "Keine Teilnehmer ausgewählt!";
@@ -66,23 +127,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                     
                     // Use first participant as captain
-                    $stmt_participant = $conn->prepare("SELECT name, birth_year FROM registration_singles WHERE id = ?");
+                    $stmt_participant = $conn->prepare("SELECT name, birth_year, club_name FROM registration_singles WHERE id = ?");
                     $stmt_participant->execute([$participant_ids[0]]);
                     $captain = $stmt_participant->fetch(PDO::FETCH_ASSOC);
                     
                     // Create crew members array
                     $crew_members = [];
+                    addDebug("DEBUG: Starting crew members creation...");
+                    
                     foreach ($participant_ids as $participant_id) {
+                        addDebug("DEBUG: Processing participant ID: $participant_id");
+                        
                         $stmt_participant->execute([$participant_id]);
                         $participant = $stmt_participant->fetch(PDO::FETCH_ASSOC);
                         
+                        addDebugArray("DEBUG: Participant $participant_id data", $participant);
+                        
                         $name_parts = explode(' ', $participant['name'], 2);
-                        $crew_members[] = [
+                        
+                        // Use individual club_name for each crew member
+                        $participant_club = $participant['club_name'] ?? 'Unbekannt';
+                        addDebug("DEBUG: Participant $participant_id club_name: '" . ($participant['club_name'] ?? 'NULL') . "' -> Final: '$participant_club'");
+                        
+                        $crew_member = [
                             'first_name' => $name_parts[0] ?? '',
                             'last_name' => $name_parts[1] ?? '',
-                            'birth_year' => $participant['birth_year']
+                            'birth_year' => $participant['birth_year'],
+                            'club_name' => $participant_club
                         ];
+                        
+                        addDebugArray("DEBUG: Created crew member for $participant_id", $crew_member);
+                        $crew_members[] = $crew_member;
                     }
+                    
+                    addDebugArray("DEBUG: Final crew members array", $crew_members);
+                    
+                    
+                    addDebug("DEBUG: About to execute boat creation with:");
+                    addDebug("DEBUG: - event_id: $event_id");
+                    addDebug("DEBUG: - club_name: '$club_name'");
+                    addDebug("DEBUG: - boat_name: '$boat_name'");
+                    addDebug("DEBUG: - boat_type: '$boat_type'");
+                    addDebug("DEBUG: - captain name: '{$captain['name']}'");
+                    addDebug("DEBUG: - captain birth_year: '{$captain['birth_year']}'");
+                    addDebug("DEBUG: - crew_members JSON: " . json_encode($crew_members));
                     
                     $stmt->execute([
                         $event_id,
@@ -96,6 +184,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         '0000000000',
                         'approved'
                     ]);
+                    
+                    addDebug("DEBUG: Boat creation executed successfully!");
                     
                     // Update singles races_completed count
                     foreach ($participant_ids as $participant_id) {
@@ -115,8 +205,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     
                     $conn->commit();
+                    addDebug("DEBUG: Transaction committed successfully!");
                     $message = "Boot erfolgreich aus Einzel-Anmeldungen erstellt!";
                     $messageType = "success";
+                    addDebug("=== SINGLE CREATOR DEBUG END ===");
                     
                 } catch (Exception $e) {
                     $conn->rollBack();
@@ -134,11 +226,18 @@ $registration_events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Get available singles for selected event (only those who haven't completed all desired races)
 if ($selected_event_id) {
+    addDebug("DEBUG: Loading singles for event ID: $selected_event_id");
     $stmt = $conn->prepare("SELECT * FROM registration_singles WHERE event_id = ? AND status = 'approved' AND races_completed < desired_races ORDER BY name");
     $stmt->execute([$selected_event_id]);
     $available_singles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    addDebug("DEBUG: Found " . count($available_singles) . " available singles");
+    foreach ($available_singles as $single) {
+        addDebug("DEBUG: Single ID: {$single['id']}, Name: '{$single['name']}', Club: '" . ($single['club_name'] ?? 'NULL') . "'");
+    }
 } else {
     $available_singles = [];
+    addDebug("DEBUG: No event selected, no singles loaded");
 }
 
 // Get existing boats created from singles
@@ -415,6 +514,9 @@ $available_clubs = $stmt->fetchAll(PDO::FETCH_COLUMN);
         <div class="header">
             <h1>👥 Single Creator</h1>
             <p>Erstellen Sie Boote aus Einzel-Anmeldungen</p>
+            <?php if (!$debug_enabled): ?>
+            <p style="font-size: 0.9em; opacity: 0.8;">💡 <strong>Debug-Tipp:</strong> Fügen Sie <code>?debug=1</code> zur URL hinzu für Debug-Informationen</p>
+            <?php endif; ?>
             <div class="nav-links">
                 <a href="registration_admin.php">← Zurück zum Admin</a>
                 <a href="race_creator.php">🚣‍♀️ Race Creator</a>
@@ -425,6 +527,19 @@ $available_clubs = $stmt->fetchAll(PDO::FETCH_COLUMN);
         <?php if (isset($message)): ?>
         <div class="message <?= $messageType ?>">
             <?= htmlspecialchars($message) ?>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!empty($debug_info) && $debug_enabled): ?>
+        <div class="section" style="background: #f8f9fa; border: 2px solid #dc3545;">
+            <h2 style="color: #dc3545;">🔍 Debug Information</h2>
+            <div style="background: white; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto;">
+                <?php foreach ($debug_info as $debug_line): ?>
+                <div style="margin-bottom: 5px; padding: 2px; border-bottom: 1px solid #eee;">
+                    <?= htmlspecialchars($debug_line) ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
         </div>
         <?php endif; ?>
 
@@ -452,8 +567,9 @@ $available_clubs = $stmt->fetchAll(PDO::FETCH_COLUMN);
                 </div>
                 <?php else: ?>
                 <?php foreach ($available_singles as $single): ?>
-                <div class="single-item" draggable="true" data-id="<?= $single['id'] ?>" data-name="<?= htmlspecialchars($single['name']) ?>" data-birth="<?= $single['birth_year'] ?>">
+                <div class="single-item" draggable="true" data-id="<?= $single['id'] ?>" data-name="<?= htmlspecialchars($single['name']) ?>" data-birth="<?= $single['birth_year'] ?>" data-club="<?= htmlspecialchars($single['club_name'] ?? 'Nicht angegeben') ?>" data-additional="<?= htmlspecialchars($single['additional_info'] ?? '') ?>" onclick="showSingleDetails(<?= $single['id'] ?>)">
                     <strong><?= htmlspecialchars($single['name']) ?></strong><br>
+                    <small>Verein: <?= htmlspecialchars($single['club_name'] ?? 'Nicht angegeben') ?></small><br>
                     <small>Geburtsjahr: <?= $single['birth_year'] ?></small><br>
                     <small>Bevorzugt: <?= 
                         is_string($single['preferred_boat_types']) ? 
@@ -487,16 +603,6 @@ $available_clubs = $stmt->fetchAll(PDO::FETCH_COLUMN);
                                 <option value="2x">2x - Zweier</option>
                                 <option value="3x+">3x+ - Dreier und mehr</option>
                                 <option value="4x">4x - Vierer</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="club_name">Verein:</label>
-                            <select name="club_name" id="clubName" required>
-                                <option value="">Bitte wählen Sie einen Verein</option>
-                                <?php foreach ($available_clubs as $club): ?>
-                                <option value="<?= htmlspecialchars($club) ?>"><?= htmlspecialchars($club) ?></option>
-                                <?php endforeach; ?>
                             </select>
                         </div>
                         
@@ -554,6 +660,22 @@ $available_clubs = $stmt->fetchAll(PDO::FETCH_COLUMN);
         <?php endif; ?>
     </div>
 
+    <!-- Single Details Modal -->
+    <div id="singleDetailsModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
+        <div class="modal-content" style="background-color: white; margin: 5% auto; padding: 20px; border-radius: 10px; width: 80%; max-width: 600px; max-height: 80%; overflow-y: auto;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #4facfe;">
+                <h3 style="margin: 0; color: #4facfe;">👤 Einzelanmeldung Details</h3>
+                <span class="close" onclick="closeSingleDetails()" style="font-size: 28px; font-weight: bold; cursor: pointer; color: #aaa;">&times;</span>
+            </div>
+            <div class="modal-body" id="singleDetailsContent">
+                <!-- Content will be populated by JavaScript -->
+            </div>
+            <div class="modal-footer" style="margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee; text-align: right;">
+                <button onclick="closeSingleDetails()" class="btn btn-primary">Schließen</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let selectedParticipants = [];
         let requiredCount = 0;
@@ -587,6 +709,37 @@ $available_clubs = $stmt->fetchAll(PDO::FETCH_COLUMN);
             } else {
                 btn.textContent = 'Boot erstellen';
             }
+        }
+
+        function showSingleDetails(singleId) {
+            const singleItem = document.querySelector(`[data-id="${singleId}"]`);
+            if (!singleItem) return;
+            
+            const name = singleItem.dataset.name;
+            const birth = singleItem.dataset.birth;
+            const club = singleItem.dataset.club;
+            const additional = singleItem.dataset.additional;
+            
+            const content = document.getElementById('singleDetailsContent');
+            content.innerHTML = `
+                <div style="margin-bottom: 15px;">
+                    <strong>Name:</strong> ${name}<br>
+                    <strong>Geburtsjahr:</strong> ${birth}<br>
+                    <strong>Verein:</strong> ${club}
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <strong>Zusätzliche Informationen:</strong><br>
+                    <div style="background: #f8f9fa; padding: 10px; border-radius: 5px; margin-top: 5px; white-space: pre-wrap;">
+                        ${additional || 'Keine zusätzlichen Informationen vorhanden.'}
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('singleDetailsModal').style.display = 'block';
+        }
+
+        function closeSingleDetails() {
+            document.getElementById('singleDetailsModal').style.display = 'none';
         }
 
         function removeParticipant(id) {

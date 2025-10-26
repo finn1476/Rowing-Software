@@ -82,6 +82,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = "Einzelanmeldung-Status erfolgreich aktualisiert!";
                 $messageType = "success";
                 break;
+                
+            case 'update_event_settings':
+                $event_id = $_POST['event_id'];
+                $allowed_boat_types = $_POST['allowed_boat_types'] ?? [];
+                $singles_enabled = isset($_POST['singles_enabled']) ? 1 : 0;
+                
+                // Validate boat types
+                $valid_types = ['1x', '2x', '2x+', '3x', '3x+', '4x', '4x+', '8-'];
+                $filtered_types = array_intersect($allowed_boat_types, $valid_types);
+                
+                // If no types selected, store NULL (meaning all types are allowed)
+                $json_value = empty($filtered_types) ? null : json_encode($filtered_types);
+                
+                $stmt = $conn->prepare("UPDATE registration_events SET allowed_boat_types = ?, singles_enabled = ? WHERE id = ?");
+                $stmt->execute([$json_value, $singles_enabled, $event_id]);
+                $message = "Event-Einstellungen erfolgreich aktualisiert!";
+                $messageType = "success";
+                break;
+                
         }
     }
 }
@@ -130,173 +149,15 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meldeportal Admin - Regatta System</title>
+    <title>Rowing Regatta Management - Registration Admin</title>
     <link rel="stylesheet" href="../css/styles.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .admin-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            border-radius: 15px;
-            margin-bottom: 30px;
-            text-align: center;
-        }
-        
-        .header h1 {
-            margin: 0;
-            font-size: 2.5em;
-            font-weight: 300;
-        }
-        
-        .header p {
-            margin: 10px 0 0 0;
-            opacity: 0.9;
-            font-size: 1.1em;
-        }
-        
-        .nav-links {
-            margin-top: 20px;
-        }
-        
-        .nav-links a {
-            color: white;
-            text-decoration: none;
-            margin: 0 15px;
-            padding: 8px 16px;
-            border-radius: 20px;
-            background: rgba(255,255,255,0.2);
-            transition: all 0.3s ease;
-        }
-        
-        .nav-links a:hover {
-            background: rgba(255,255,255,0.3);
-            transform: translateY(-2px);
-        }
-        
-        .section {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            margin-bottom: 30px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-        
-        .section h2 {
-            color: #333;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 3px solid #667eea;
-            font-size: 1.5em;
-        }
-        
-        .form-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        
-        .form-group {
-            margin-bottom: 15px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #555;
-        }
-        
-        .form-group input, .form-group select, .form-group textarea {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e1e5e9;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.3s ease;
-        }
-        
-        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            display: inline-block;
-        }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-        
-        .btn-success {
-            background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
-            color: white;
-        }
-        
-        .btn-warning {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
-        }
-        
-        .btn-info {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-        }
-        
-        .table-container {
-            overflow-x: auto;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-            background: white;
-        }
-        
-        .data-table th {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px;
-            text-align: left;
-            font-weight: 600;
-        }
-        
-        .data-table td {
-            padding: 12px 15px;
-            border-bottom: 1px solid #e1e5e9;
-        }
-        
-        .data-table tr:hover {
-            background: #f8f9fa;
-        }
-        
         .status-badge {
             padding: 4px 12px;
             border-radius: 20px;
@@ -330,109 +191,137 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
             color: #0c5460;
         }
         
-        .message {
+        .crew-details {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #e1e5e9;
+        }
+        
+        .crew-member {
+            background: white;
             padding: 15px;
             border-radius: 8px;
-            margin-bottom: 20px;
-            font-weight: 600;
-        }
-        
-        .message.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .message.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        
-        .message.warning {
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        
-        .stat-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 15px;
-            text-align: center;
-        }
-        
-        .stat-card h3 {
-            margin: 0;
-            font-size: 2em;
-            font-weight: 300;
-        }
-        
-        .stat-card p {
-            margin: 5px 0 0 0;
-            opacity: 0.9;
+            border-left: 4px solid #0056b3;
+            margin-bottom: 10px;
         }
     </style>
 </head>
 <body>
-    <div class="admin-container">
-        <div class="header">
-            <h1>🏆 Meldeportal Admin</h1>
-            <p>Verwalten Sie Events, Anmeldungen und Genehmigungen</p>
-            <div class="nav-links">
-                <a href="admin.php">← Zurück zum Admin</a>
-                <a href="single_creator.php">👥 Single Creator</a>
-                <a href="race_creator.php">🚣‍♀️ Race Creator</a>
-                <a href="../logout.php">🚪 Logout</a>
+    <div class="container">
+        <header class="py-3 mb-4 border-bottom">
+            <h1 class="text-center">Rowing Regatta Management</h1>
+            <nav class="navbar navbar-expand-lg navbar-light bg-light">
+                <div class="container-fluid">
+                    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                        <span class="navbar-toggler-icon"></span>
+                    </button>
+                    <div class="collapse navbar-collapse" id="navbarNav">
+                        <ul class="navbar-nav">
+                            <li class="nav-item">
+                                <a class="nav-link" href="../index.php">Home</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="../index.php?page=upcoming_races">Upcoming Races</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="../index.php?page=ruderer_search">Ruderer-Suche</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="../index.php?page=historical_data">Historical Data</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="registration.php">Meldeportal</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="admin.php">Admin</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link active" href="registration_admin.php">Registration Admin</a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </nav>
+        </header>
+
+        <main>
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="mb-0">🏆 Meldeportal Admin</h2>
+                            <p class="mb-0 text-muted">Verwalten Sie Events, Anmeldungen und Genehmigungen</p>
+                        </div>
+                        <div class="card-body">
+                            <div class="btn-group" role="group">
+                                <a href="admin.php" class="btn btn-outline-primary">← Zurück zum Admin</a>
+                                <a href="single_creator.php" class="btn btn-outline-info">👥 Single Creator</a>
+                                <a href="race_creator.php" class="btn btn-outline-success">🚣‍♀️ Race Creator</a>
+                                <a href="../logout.php" class="btn btn-outline-danger">🚪 Logout</a>
+                            </div>
+                        </div>
+                    </div>
             </div>
         </div>
 
         <?php if (isset($message)): ?>
-        <div class="message <?= $messageType ?>">
+            <div class="alert alert-<?= $messageType === 'success' ? 'success' : ($messageType === 'error' ? 'danger' : 'warning') ?> alert-dismissible fade show" role="alert">
             <?= htmlspecialchars($message) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
         <?php endif; ?>
 
         <!-- Statistics -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <h3><?= count($registration_events) ?></h3>
-                <p>Aktive Events</p>
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="display-4 text-primary"><?= count($registration_events) ?></h3>
+                            <p class="card-text">Aktive Events</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="display-4 text-info"><?= count($boat_registrations) ?></h3>
+                            <p class="card-text"><?= $filter_event_id ? 'Gefilterte Boot-Anmeldungen' : 'Boot-Anmeldungen' ?></p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="display-4 text-success"><?= count($single_registrations) ?></h3>
+                            <p class="card-text"><?= $filter_event_id ? 'Gefilterte Einzel-Anmeldungen' : 'Einzel-Anmeldungen' ?></p>
+                        </div>
+                    </div>
             </div>
-            <div class="stat-card">
-                <h3><?= count($boat_registrations) ?></h3>
-                <p><?= $filter_event_id ? 'Gefilterte Boot-Anmeldungen' : 'Boot-Anmeldungen' ?></p>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="display-4 text-warning"><?= count(array_filter($boat_registrations, function($b) { return $b['status'] === 'approved'; })) ?></h3>
+                            <p class="card-text"><?= $filter_event_id ? 'Genehmigte Boote (gefiltert)' : 'Genehmigte Boote' ?></p>
             </div>
-            <div class="stat-card">
-                <h3><?= count($single_registrations) ?></h3>
-                <p><?= $filter_event_id ? 'Gefilterte Einzel-Anmeldungen' : 'Einzel-Anmeldungen' ?></p>
             </div>
-            <div class="stat-card">
-                <h3><?= count(array_filter($boat_registrations, function($b) { return $b['status'] === 'approved'; })) ?></h3>
-                <p><?= $filter_event_id ? 'Genehmigte Boote (gefiltert)' : 'Genehmigte Boote' ?></p>
             </div>
         </div>
 
         <!-- Event Management -->
-        <div class="section">
-            <h2>📅 Event-Verwaltung</h2>
-            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h2 class="mb-0">📅 Event-Verwaltung</h2>
+                </div>
+                <div class="card-body">
             <!-- Activate Main Event -->
-            <div style="margin-bottom: 30px;">
-                <h3 style="color: #667eea; margin-bottom: 15px;">🔗 Event aus Hauptsystem aktivieren</h3>
-                <form method="POST" style="background: #f8f9fa; padding: 20px; border-radius: 10px;">
+                    <div class="mb-4">
+                        <h4 class="text-primary mb-3">🔗 Event aus Hauptsystem aktivieren</h4>
+                        <form method="POST" class="bg-light p-3 rounded">
                     <input type="hidden" name="action" value="activate_main_event">
-                    <div class="form-group">
-                        <label for="main_event_id">Event auswählen:</label>
-                        <select name="main_event_id" id="main_event_id" required>
+                            <div class="mb-3">
+                                <label for="main_event_id" class="form-label">Event auswählen:</label>
+                                <select name="main_event_id" id="main_event_id" class="form-select" required>
                             <option value="">Bitte wählen Sie ein Event aus dem Hauptsystem</option>
                             <?php foreach ($available_main_events as $event): ?>
                             <option value="<?= $event['id'] ?>">
@@ -446,10 +335,10 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
 
             <!-- Event List -->
-            <h3 style="color: #667eea; margin-bottom: 15px;">📋 Aktuelle Events</h3>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
+                    <h4 class="text-primary mb-3">📋 Aktuelle Events</h4>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead class="table-dark">
                         <tr>
                             <th>Name</th>
                             <th>Datum</th>
@@ -471,37 +360,43 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <form method="POST" style="display: inline;">
+                                        <form method="POST" class="d-inline">
                                     <input type="hidden" name="action" value="toggle_event">
                                     <input type="hidden" name="event_id" value="<?= $event['id'] ?>">
                                     <input type="hidden" name="is_active" value="<?= $event['is_active'] ? '0' : '1' ?>">
-                                    <button type="submit" class="btn <?= $event['is_active'] ? 'btn-warning' : 'btn-success' ?>" style="padding: 6px 12px; font-size: 12px;">
+                                            <button type="submit" class="btn btn-sm <?= $event['is_active'] ? 'btn-warning' : 'btn-success' ?>">
                                         <?= $event['is_active'] ? 'Deaktivieren' : 'Aktivieren' ?>
                                     </button>
                                 </form>
                             </td>
                             <td>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary me-1" onclick="openEventSettings(<?= $event['id'] ?>, '<?= htmlspecialchars($event['name']) ?>', <?= htmlspecialchars($event['allowed_boat_types'] ?? 'null') ?>, <?= $event['singles_enabled'] ? 'true' : 'false' ?>)">
+                                            ⚙️ Settings
+                                        </button>
                                 <?php if ($event['main_event_id']): ?>
-                                    <a href="race_creator.php?event_id=<?= $event['id'] ?>" class="btn btn-info" style="padding: 6px 12px; font-size: 12px;">Rennen erstellen</a>
+                                            <a href="race_creator.php?event_id=<?= $event['id'] ?>" class="btn btn-sm btn-info">Rennen erstellen</a>
                                 <?php endif; ?>
                             </td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                    </div>
             </div>
         </div>
 
         <!-- Boat Registrations -->
-        <div class="section">
-            <h2>🚣‍♀️ Boot-Anmeldungen</h2>
-            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h2 class="mb-0">🚣‍♀️ Boot-Anmeldungen</h2>
+                </div>
+                <div class="card-body">
             <!-- Filter -->
-            <div style="margin-bottom: 20px; background: #f8f9fa; padding: 15px; border-radius: 10px;">
-                <form method="GET" style="display: flex; align-items: center; gap: 15px;">
-                    <div class="form-group" style="margin: 0; flex: 1;">
-                        <label for="filter_event_id" style="margin-bottom: 5px; font-size: 14px;">Nach Event filtern:</label>
-                        <select name="filter_event_id" id="filter_event_id" onchange="this.form.submit()" style="width: 100%;">
+                    <div class="mb-3 bg-light p-3 rounded">
+                        <form method="GET" class="row g-3 align-items-end">
+                            <div class="col-md-8">
+                                <label for="filter_event_id" class="form-label">Nach Event filtern:</label>
+                                <select name="filter_event_id" id="filter_event_id" class="form-select" onchange="this.form.submit()">
                             <option value="">Alle Events anzeigen</option>
                             <?php foreach ($registration_events as $event): ?>
                             <option value="<?= $event['id'] ?>" <?= $filter_event_id == $event['id'] ? 'selected' : '' ?>>
@@ -510,16 +405,20 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <button type="submit" class="btn btn-primary" style="margin-top: 20px;">Filtern</button>
+                            <div class="col-md-2">
+                                <button type="submit" class="btn btn-primary">Filtern</button>
+                            </div>
                     <?php if ($filter_event_id): ?>
-                    <a href="?" class="btn btn-warning" style="margin-top: 20px;">Filter zurücksetzen</a>
+                            <div class="col-md-2">
+                                <a href="?" class="btn btn-warning">Filter zurücksetzen</a>
+                            </div>
                     <?php endif; ?>
                 </form>
             </div>
             
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead class="table-dark">
                         <tr>
                             <th>Verein</th>
                             <th>Boot</th>
@@ -536,7 +435,7 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <td>
                                 <strong><?= htmlspecialchars($boat['club_name']) ?></strong>
                                 <?php if ($boat['crew_members']): ?>
-                                <br><small style="color: #666;">
+                                        <br><small class="text-muted">
                                     <?php 
                                     $crew = json_decode($boat['crew_members'], true);
                                     $clubs = [];
@@ -550,7 +449,7 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     }
                                     ?>
                                 </small>
-                                <br><button type="button" class="btn btn-info" style="padding: 2px 8px; font-size: 11px; margin-top: 5px;" onclick="toggleCrewDetails(<?= $boat['id'] ?>)">
+                                        <br><button type="button" class="btn btn-sm btn-info mt-1" onclick="toggleCrewDetails(<?= $boat['id'] ?>)">
                                     👥 Details anzeigen
                                 </button>
                                 <?php endif; ?>
@@ -565,10 +464,10 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 </span>
                             </td>
                             <td>
-                                <form method="POST" style="display: inline;">
+                                        <form method="POST" class="d-inline">
                                     <input type="hidden" name="action" value="update_boat_status">
                                     <input type="hidden" name="boat_id" value="<?= $boat['id'] ?>">
-                                    <select name="status" onchange="this.form.submit()" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">
+                                            <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
                                         <option value="pending" <?= $boat['status'] === 'pending' ? 'selected' : '' ?>>Ausstehend</option>
                                         <option value="approved" <?= $boat['status'] === 'approved' ? 'selected' : '' ?>>Genehmigt</option>
                                         <option value="rejected" <?= $boat['status'] === 'rejected' ? 'selected' : '' ?>>Abgelehnt</option>
@@ -578,22 +477,22 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             </td>
                         </tr>
                         <!-- Crew Details Row -->
-                        <tr id="crew-details-<?= $boat['id'] ?>" style="display: none; background: #f8f9fa;">
-                            <td colspan="7" style="padding: 20px;">
-                                <div style="background: white; padding: 20px; border-radius: 10px; border: 1px solid #e1e5e9;">
-                                    <h4 style="margin: 0 0 15px 0; color: #333; display: flex; align-items: center;">
-                                        <span style="margin-right: 10px;">👥</span>
+                                <tr id="crew-details-<?= $boat['id'] ?>" style="display: none;">
+                                    <td colspan="7">
+                                        <div class="crew-details">
+                                            <h5 class="mb-3">
+                                                <span class="me-2">👥</span>
                                         Crew-Details: <?= htmlspecialchars($boat['boat_name']) ?> (<?= $boat['boat_type'] ?>)
-                                    </h4>
+                                            </h5>
                                     
                                     <?php if ($boat['crew_members']): ?>
                                         <?php 
                                         $crew = json_decode($boat['crew_members'], true);
                                         $crew_count = count($crew);
                                         ?>
-                                        <div style="margin-bottom: 15px;">
+                                                <div class="mb-3">
                                             <strong>Anzahl Crew-Mitglieder:</strong> <?= $crew_count ?> 
-                                            <span style="color: #666; margin-left: 10px;">
+                                                    <span class="text-muted ms-2">
                                                 (Erforderlich: <?= 
                                                     $boat['boat_type'] === '1x' ? 1 :
                                                     ($boat['boat_type'] === '2x' ? 2 :
@@ -607,58 +506,59 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                             </span>
                                         </div>
                                         
-                                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px;">
+                                                <div class="row">
                                             <?php foreach ($crew as $index => $member): ?>
-                                            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea;">
-                                                <h5 style="margin: 0 0 10px 0; color: #333;">
-                                                    Crew-Mitglied <?= $index + 1 ?>
-                                                </h5>
-                                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
-                                                    <div>
+                                                    <div class="col-md-6 mb-3">
+                                                        <div class="crew-member">
+                                                            <h6 class="mb-2">Crew-Mitglied <?= $index + 1 ?></h6>
+                                                            <div class="row">
+                                                                <div class="col-6">
                                                         <strong>Name:</strong><br>
                                                         <?= htmlspecialchars($member['first_name'] . ' ' . $member['last_name']) ?>
                                                     </div>
-                                                    <div>
+                                                                <div class="col-6">
                                                         <strong>Geburtsjahr:</strong><br>
                                                         <?= htmlspecialchars($member['birth_year']) ?>
                                                     </div>
-                                                    <div>
+                                                                <div class="col-6">
                                                         <strong>Verein:</strong><br>
-                                                        <span style="color: #667eea; font-weight: 600;">
-                                                            <?= htmlspecialchars($member['club'] ?? 'Unbekannt') ?>
+                                                                    <span class="text-primary fw-bold">
+                                                            <?= htmlspecialchars($member['club_name'] ?? 'Unbekannt') ?>
                                                         </span>
                                                     </div>
-                                                    <div>
+                                                                <div class="col-6">
                                                         <strong>Alter:</strong><br>
                                                         <?= date('Y') - $member['birth_year'] ?> Jahre
+                                                                </div>
                                                     </div>
                                                 </div>
                                             </div>
                                             <?php endforeach; ?>
                                         </div>
                                     <?php else: ?>
-                                        <div style="color: #666; font-style: italic; padding: 20px; text-align: center; background: #f8f9fa; border-radius: 8px;">
+                                                <div class="text-muted fst-italic text-center py-3 bg-light rounded">
                                             Keine Crew-Details verfügbar
                                         </div>
                                     <?php endif; ?>
                                     
                                     <!-- Contact Information -->
-                                    <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e1e5e9;">
-                                        <h5 style="margin: 0 0 10px 0; color: #333;">📞 Kontakt-Informationen</h5>
-                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
-                                            <div>
-                                                <strong>Melder:</strong> <?= htmlspecialchars($boat['captain_name']) ?>
+                                            <div class="mt-3 pt-3 border-top">
+                                                <h6 class="mb-2">📞 Kontakt-Informationen</h6>
+                                                <div class="row">
+                                                    <div class="col-md-3">
+                                                        <strong>Melder:</strong><br>
+                                                        <?= htmlspecialchars($boat['captain_name']) ?>
                                             </div>
-                                            <div>
-                                                <strong>Email:</strong> 
+                                                    <div class="col-md-3">
+                                                        <strong>Email:</strong><br>
                                                 <?= $boat['contact_email'] ? htmlspecialchars($boat['contact_email']) : 'Nicht angegeben' ?>
                                             </div>
-                                            <div>
-                                                <strong>Telefon:</strong> 
+                                                    <div class="col-md-3">
+                                                        <strong>Telefon:</strong><br>
                                                 <?= $boat['contact_phone'] ? htmlspecialchars($boat['contact_phone']) : 'Nicht angegeben' ?>
                                             </div>
-                                            <div>
-                                                <strong>Anmeldung:</strong> 
+                                                    <div class="col-md-3">
+                                                        <strong>Anmeldung:</strong><br>
                                                 <?= date('d.m.Y H:i', strtotime($boat['created_at'])) ?>
                                             </div>
                                         </div>
@@ -669,27 +569,31 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                    </div>
             </div>
         </div>
 
         <!-- Single Registrations -->
-        <div class="section">
-            <h2>👤 Einzel-Anmeldungen</h2>
-            <div style="margin-bottom: 20px;">
-                <a href="single_creator.php" class="btn btn-info" style="text-decoration: none; margin-right: 10px;">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h2 class="mb-0">👤 Einzel-Anmeldungen</h2>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <a href="single_creator.php" class="btn btn-info me-2">
                     👥 Single Creator - Boote aus Einzel-Anmeldungen erstellen
                 </a>
-                <a href="../create_test_singles.php" class="btn btn-success" style="text-decoration: none;">
+                        <a href="../create_test_singles.php" class="btn btn-success">
                     🧪 Test Einzel-Anmeldungen erstellen
                 </a>
             </div>
             
             <!-- Filter -->
-            <div style="margin-bottom: 20px; background: #f8f9fa; padding: 15px; border-radius: 10px;">
-                <form method="GET" style="display: flex; align-items: center; gap: 15px;">
-                    <div class="form-group" style="margin: 0; flex: 1;">
-                        <label for="filter_event_id_single" style="margin-bottom: 5px; font-size: 14px;">Nach Event filtern:</label>
-                        <select name="filter_event_id" id="filter_event_id_single" onchange="this.form.submit()" style="width: 100%;">
+                    <div class="mb-3 bg-light p-3 rounded">
+                        <form method="GET" class="row g-3 align-items-end">
+                            <div class="col-md-8">
+                                <label for="filter_event_id_single" class="form-label">Nach Event filtern:</label>
+                                <select name="filter_event_id" id="filter_event_id_single" class="form-select" onchange="this.form.submit()">
                             <option value="">Alle Events anzeigen</option>
                             <?php foreach ($registration_events as $event): ?>
                             <option value="<?= $event['id'] ?>" <?= $filter_event_id == $event['id'] ? 'selected' : '' ?>>
@@ -698,19 +602,24 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <button type="submit" class="btn btn-primary" style="margin-top: 20px;">Filtern</button>
+                            <div class="col-md-2">
+                                <button type="submit" class="btn btn-primary">Filtern</button>
+                            </div>
                     <?php if ($filter_event_id): ?>
-                    <a href="?" class="btn btn-warning" style="margin-top: 20px;">Filter zurücksetzen</a>
+                            <div class="col-md-2">
+                                <a href="?" class="btn btn-warning">Filter zurücksetzen</a>
+                            </div>
                     <?php endif; ?>
                 </form>
             </div>
             
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead class="table-dark">
                         <tr>
                             <th>Name</th>
                             <th>Geburtsjahr</th>
+                                    <th>Verein</th>
                             <th>Bevorzugte Boote</th>
                             <th>Rennen</th>
                             <th>Event</th>
@@ -723,6 +632,7 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <tr>
                             <td><strong><?= htmlspecialchars($single['name']) ?></strong></td>
                             <td><?= $single['birth_year'] ?></td>
+                            <td><?= htmlspecialchars($single['club_name'] ?? 'Nicht angegeben') ?></td>
                             <td><?= 
                                 is_string($single['preferred_boat_types']) ? 
                                 htmlspecialchars($single['preferred_boat_types']) : 
@@ -736,10 +646,10 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 </span>
                             </td>
                             <td>
-                                <form method="POST" style="display: inline;">
+                                <form method="POST" class="d-inline">
                                     <input type="hidden" name="action" value="update_single_status">
                                     <input type="hidden" name="single_id" value="<?= $single['id'] ?>">
-                                    <select name="status" onchange="this.form.submit()" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;">
+                                    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
                                         <option value="pending" <?= $single['status'] === 'pending' ? 'selected' : '' ?>>Ausstehend</option>
                                         <option value="approved" <?= $single['status'] === 'approved' ? 'selected' : '' ?>>Genehmigt</option>
                                         <option value="rejected" <?= $single['status'] === 'rejected' ? 'selected' : '' ?>>Abgelehnt</option>
@@ -754,7 +664,108 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
     </div>
+        </main>
 
+        <footer class="py-3 my-4 border-top">
+            <p class="text-center text-muted">© 2023 Rowing Regatta Management</p>
+        </footer>
+    </div>
+
+
+    <!-- Event Settings Modal -->
+    <div class="modal fade" id="eventSettingsModal" tabindex="-1" aria-labelledby="eventSettingsModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="eventSettingsModalLabel">⚙️ Event-Einstellungen</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="eventSettingsForm" method="POST">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="update_event_settings">
+                        <input type="hidden" name="event_id" id="settingsEventId">
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Event:</label>
+                            <p id="settingsEventName" class="text-muted"></p>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Erlaubte Boot-Typen:</label>
+                            <p class="text-muted small">Wählen Sie die Boot-Typen aus, die für dieses Event angemeldet werden dürfen:</p>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="allowed_boat_types[]" value="1x" id="boat_1x">
+                                        <label class="form-check-label" for="boat_1x">1x (Einer)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="allowed_boat_types[]" value="2x" id="boat_2x">
+                                        <label class="form-check-label" for="boat_2x">2x (Zweier)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="allowed_boat_types[]" value="2x+" id="boat_2x_plus">
+                                        <label class="form-check-label" for="boat_2x_plus">2x+ (Zweier mit Steuermann)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="allowed_boat_types[]" value="3x" id="boat_3x">
+                                        <label class="form-check-label" for="boat_3x">3x (Dreier)</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="allowed_boat_types[]" value="3x+" id="boat_3x_plus">
+                                        <label class="form-check-label" for="boat_3x_plus">3x+ (Dreier mit Steuermann)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="allowed_boat_types[]" value="4x" id="boat_4x">
+                                        <label class="form-check-label" for="boat_4x">4x (Vierer)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="allowed_boat_types[]" value="4x+" id="boat_4x_plus">
+                                        <label class="form-check-label" for="boat_4x_plus">4x+ (Vierer mit Steuermann)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="allowed_boat_types[]" value="8-" id="boat_8">
+                                        <label class="form-check-label" for="boat_8">8- (Achter)</label>
+                                    </div>
+            </div>
+        </div>
+    </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Einzelanmeldungen:</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="singles_enabled" id="singles_enabled" checked>
+                                <label class="form-check-label" for="singles_enabled">
+                                    Einzelanmeldungen für dieses Event aktiviert
+                                </label>
+                            </div>
+                            <div class="form-text">Wenn deaktiviert, können sich keine Einzelpersonen für dieses Event anmelden.</div>
+    </div>
+
+                        <div class="alert alert-info">
+                            <small>
+                                <strong>Hinweis:</strong> 
+                                <ul class="mb-0 mt-1">
+                                    <li>✅ <strong>Angehakt:</strong> Diese Boot-Typen sind für das Event erlaubt</li>
+                                    <li>❌ <strong>Nicht angehakt:</strong> Diese Boot-Typen sind für das Event nicht erlaubt</li>
+                                    <li><strong>Alle nicht angehakt:</strong> Alle Boot-Typen sind erlaubt (keine Einschränkungen)</li>
+                                </ul>
+                            </small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                        <button type="submit" class="btn btn-primary">Einstellungen speichern</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         function toggleCrewDetails(boatId) {
             const detailsRow = document.getElementById('crew-details-' + boatId);
@@ -763,13 +774,60 @@ $single_registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
             if (detailsRow.style.display === 'none' || detailsRow.style.display === '') {
                 detailsRow.style.display = 'table-row';
                 button.textContent = '👥 Details ausblenden';
-                button.style.background = '#dc3545';
+                button.className = 'btn btn-sm btn-danger mt-1';
             } else {
                 detailsRow.style.display = 'none';
                 button.textContent = '👥 Details anzeigen';
-                button.style.background = '#4facfe';
+                button.className = 'btn btn-sm btn-info mt-1';
             }
         }
+        
+        function openEventSettings(eventId, eventName, allowedBoatTypes, singlesEnabled) {
+            // Set event ID and name
+            document.getElementById('settingsEventId').value = eventId;
+            document.getElementById('settingsEventName').textContent = eventName;
+            
+            // Clear all checkboxes first
+            const checkboxes = document.querySelectorAll('input[name="allowed_boat_types[]"]');
+            checkboxes.forEach(checkbox => checkbox.checked = false);
+            
+            // Set checkboxes based on allowed boat types
+            if (allowedBoatTypes && allowedBoatTypes !== 'null' && allowedBoatTypes !== '') {
+                try {
+                    // Handle both string and already parsed JSON
+                    let types;
+                    if (typeof allowedBoatTypes === 'string') {
+                        types = JSON.parse(allowedBoatTypes);
+                    } else {
+                        types = allowedBoatTypes;
+                    }
+                    
+                    if (Array.isArray(types) && types.length > 0) {
+                        // If specific types are set, check only those
+                        types.forEach(type => {
+                            const checkbox = document.getElementById('boat_' + type.replace('+', '_plus').replace('-', '_'));
+                            if (checkbox) {
+                                checkbox.checked = true;
+                            }
+                        });
+                    }
+                    // If empty array, leave all unchecked (meaning no restrictions = all allowed)
+                } catch (e) {
+                    console.error('Error parsing allowed boat types:', e);
+                    console.log('Raw allowedBoatTypes:', allowedBoatTypes);
+                    // If parsing fails, leave all unchecked (fallback to all allowed)
+                }
+            }
+            // If no restrictions are set (null, empty, etc.), leave all unchecked (meaning all are allowed)
+            
+            // Set singles enabled status
+            document.getElementById('singles_enabled').checked = singlesEnabled === true || singlesEnabled === 'true';
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('eventSettingsModal'));
+            modal.show();
+        }
+        
     </script>
 </body>
 </html> 

@@ -144,6 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $first_name = validateAndSanitizeInput($_POST['first_name'] ?? '', 'name', 50);
                     $last_name = validateAndSanitizeInput($_POST['last_name'] ?? '', 'name', 50);
                     $birth_year = validateAndSanitizeInput($_POST['birth_year'] ?? '', 'year');
+                    $club_name = validateAndSanitizeInput($_POST['club_name'] ?? '', 'name', 100);
                     $experience_level = validateAndSanitizeInput($_POST['experience_level'] ?? '', 'experience_level');
                     $desired_races = validateAndSanitizeInput($_POST['desired_races'] ?? 1, 'desired_races');
                     $contact_email = validateAndSanitizeInput($_POST['contact_email'] ?? '', 'email');
@@ -151,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $additional_info = validateAndSanitizeInput($_POST['additional_info'] ?? '', 'string', 1000);
                     
                     // Validate required fields
-                    if (!$event_id || !$first_name || !$last_name || !$birth_year || !$experience_level || !$desired_races) {
+                    if (!$event_id || !$first_name || !$last_name || !$birth_year || !$club_name || !$experience_level || !$desired_races) {
                         $error_message = "Bitte füllen Sie alle Pflichtfelder korrekt aus.";
                         break;
                     }
@@ -162,6 +163,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $stmt->execute([$event_id]);
                         if (!$stmt->fetch()) {
                             $error_message = "Ungültige Veranstaltung ausgewählt.";
+                            break;
+                        }
+                        
+                        // Check if single registrations are enabled for this event
+                        if (!isSingleRegistrationEnabled($event_id, $events)) {
+                            $error_message = "Einzelanmeldungen sind für dieses Event nicht aktiviert.";
                             break;
                         }
                     } catch (PDOException $e) {
@@ -183,8 +190,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     try {
                         $full_name = $first_name . ' ' . $last_name;
-                        $stmt = $conn->prepare("INSERT INTO registration_singles (event_id, name, birth_year, preferred_boat_types, desired_races, experience_level, contact_email, contact_phone, additional_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$event_id, $full_name, $birth_year, json_encode($preferred_types), $desired_races, $experience_level, $contact_email, $contact_phone, $additional_info]);
+                        $stmt = $conn->prepare("INSERT INTO registration_singles (event_id, name, birth_year, club_name, preferred_boat_types, desired_races, experience_level, contact_email, contact_phone, additional_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$event_id, $full_name, $birth_year, $club_name, json_encode($preferred_types), $desired_races, $experience_level, $contact_email, $contact_phone, $additional_info]);
                         
                         $success_message = "Einzelmeldung erfolgreich eingereicht!";
                     } catch (PDOException $e) {
@@ -202,6 +209,13 @@ try {
     $stmt = $conn->prepare("SELECT * FROM registration_events WHERE is_active = 1 ORDER BY event_date ASC");
     $stmt->execute();
     $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Decode allowed_boat_types for each event
+    foreach ($events as &$event) {
+        if ($event['allowed_boat_types']) {
+            $event['allowed_boat_types'] = json_decode($event['allowed_boat_types'], true);
+        }
+    }
 } catch (PDOException $e) {
     error_log("Database error fetching events: " . $e->getMessage());
     $events = [];
@@ -230,6 +244,16 @@ function getRequiredCrewCount($boat_type) {
         case '8-': return 8; // 8 crew members
         default: return 1;
     }
+}
+
+// Helper function to check if single registrations are enabled for an event
+function isSingleRegistrationEnabled($event_id, $events) {
+    foreach ($events as $event) {
+        if ($event['id'] == $event_id) {
+            return $event['singles_enabled'] == 1;
+        }
+    }
+    return true; // Default: enabled
 }
 ?>
 
@@ -494,14 +518,7 @@ function getRequiredCrewCount($boat_type) {
                             <label for="boat_type">Boottyp:</label>
                             <select name="boat_type" id="boat_type" required>
                                 <option value="">Bitte wählen</option>
-                                <option value="1x">1x (Einer)</option>
-                                <option value="2x">2x (Zweier)</option>
-                                <option value="2x+">2x+ (Zweier mit Steuermann)</option>
-                                <option value="3x">3x (Dreier)</option>
-                                <option value="3x+">3x+ (Dreier mit Steuermann)</option>
-                                <option value="4x">4x (Vierer)</option>
-                                <option value="4x+">4x+ (Vierer mit Steuermann)</option>
-                                <option value="8-">8- (Achter)</option>
+                                <!-- Options will be populated dynamically based on selected event -->
                             </select>
                         </div>
                         
@@ -576,6 +593,18 @@ function getRequiredCrewCount($boat_type) {
                         </div>
                         
                         <div class="form-group">
+                            <label for="club_name">Verein/Club:</label>
+                            <select name="club_name" id="club_name" required>
+                                <option value="">Bitte wählen Sie Ihren Verein</option>
+                                <?php foreach ($teams as $team): ?>
+                                <option value="<?= htmlspecialchars($team['name'], ENT_QUOTES, 'UTF-8') ?>">
+                                    <?= htmlspecialchars($team['name'], ENT_QUOTES, 'UTF-8') ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
                             <label for="experience_level">Erfahrungslevel:</label>
                             <select name="experience_level" id="experience_level" required>
                                 <option value="beginner">Anfänger</option>
@@ -608,31 +637,8 @@ function getRequiredCrewCount($boat_type) {
 
                     <div class="form-group full-width">
                         <label>Bevorzugte Boottypen:</label>
-                        <div class="preferred-types">
-                            <label class="type-checkbox">
-                                <input type="checkbox" name="preferred_types[]" value="1x"> 1x (Einer)
-                            </label>
-                            <label class="type-checkbox">
-                                <input type="checkbox" name="preferred_types[]" value="2x"> 2x (Zweier)
-                            </label>
-                            <label class="type-checkbox">
-                                <input type="checkbox" name="preferred_types[]" value="2x+"> 2x+ (Zweier mit Steuermann)
-                            </label>
-                            <label class="type-checkbox">
-                                <input type="checkbox" name="preferred_types[]" value="3x"> 3x (Dreier)
-                            </label>
-                            <label class="type-checkbox">
-                                <input type="checkbox" name="preferred_types[]" value="3x+"> 3x+ (Dreier mit Steuermann)
-                            </label>
-                            <label class="type-checkbox">
-                                <input type="checkbox" name="preferred_types[]" value="4x"> 4x (Vierer)
-                            </label>
-                            <label class="type-checkbox">
-                                <input type="checkbox" name="preferred_types[]" value="4x+"> 4x+ (Vierer mit Steuermann)
-                            </label>
-                            <label class="type-checkbox">
-                                <input type="checkbox" name="preferred_types[]" value="8-"> 8- (Achter)
-                            </label>
+                        <div class="preferred-types" id="preferred-types-container">
+                            <!-- Checkboxes will be populated dynamically based on selected event -->
                         </div>
                     </div>
 
@@ -775,8 +781,94 @@ function getRequiredCrewCount($boat_type) {
         }
 
         // Add event listener to boat type select
-        document.addEventListener('DOMContentLoaded', function() {
+        // Event data for dynamic boat type loading
+        const events = <?= json_encode($events) ?>;
+        
+        function updateBoatTypes() {
+            const eventSelect = document.getElementById('event_id');
             const boatTypeSelect = document.getElementById('boat_type');
+            const preferredTypesContainer = document.getElementById('preferred-types-container');
+            const singleTabButton = document.querySelector('button[onclick="showTab(\'single\')"]');
+            const singleTabContent = document.getElementById('single-tab');
+            
+            if (!eventSelect || !boatTypeSelect) return;
+            
+            const selectedEventId = eventSelect.value;
+            
+            // Clear existing options
+            boatTypeSelect.innerHTML = '<option value="">Bitte wählen</option>';
+            preferredTypesContainer.innerHTML = '';
+            
+            if (!selectedEventId) {
+                // Hide single tab if no event selected
+                if (singleTabButton) singleTabButton.style.display = 'none';
+                if (singleTabContent) singleTabContent.style.display = 'none';
+                return;
+            }
+            
+            // Find the selected event
+            const selectedEvent = events.find(event => event.id == selectedEventId);
+            if (!selectedEvent) return;
+            
+            // Show/hide single tab based on singles_enabled status
+            const singlesEnabled = selectedEvent.singles_enabled === 1 || selectedEvent.singles_enabled === true;
+            if (singleTabButton) {
+                singleTabButton.style.display = singlesEnabled ? 'inline-block' : 'none';
+            }
+            if (singleTabContent) {
+                singleTabContent.style.display = singlesEnabled ? 'block' : 'none';
+            }
+            
+            // If single tab is hidden and currently active, switch to boat tab
+            if (!singlesEnabled && singleTabContent && singleTabContent.classList.contains('active')) {
+                showTab('boat');
+            }
+            
+            // Get allowed boat types for this event
+            let allowedTypes = ['1x', '2x', '2x+', '3x', '3x+', '4x', '4x+', '8-'];
+            if (selectedEvent.allowed_boat_types !== null && selectedEvent.allowed_boat_types !== undefined && 
+                Array.isArray(selectedEvent.allowed_boat_types) && selectedEvent.allowed_boat_types.length > 0) {
+                allowedTypes = selectedEvent.allowed_boat_types;
+            }
+            
+            // Add options to boat type select
+            const boatTypeLabels = {
+                '1x': '1x (Einer)',
+                '2x': '2x (Zweier)',
+                '2x+': '2x+ (Zweier mit Steuermann)',
+                '3x': '3x (Dreier)',
+                '3x+': '3x+ (Dreier mit Steuermann)',
+                '4x': '4x (Vierer)',
+                '4x+': '4x+ (Vierer mit Steuermann)',
+                '8-': '8- (Achter)'
+            };
+            
+            allowedTypes.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = boatTypeLabels[type] || type;
+                boatTypeSelect.appendChild(option);
+            });
+            
+            // Add checkboxes for preferred types
+            allowedTypes.forEach(type => {
+                const label = document.createElement('label');
+                label.className = 'type-checkbox';
+                label.innerHTML = `<input type="checkbox" name="preferred_types[]" value="${type}"> ${boatTypeLabels[type] || type}`;
+                preferredTypesContainer.appendChild(label);
+            });
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            const eventSelect = document.getElementById('event_id');
+            const boatTypeSelect = document.getElementById('boat_type');
+            
+            if (eventSelect) {
+                eventSelect.addEventListener('change', updateBoatTypes);
+                // Initialize boat types on page load
+                updateBoatTypes();
+            }
+            
             if (boatTypeSelect) {
                 boatTypeSelect.addEventListener('change', updateCrewRequirements);
             }

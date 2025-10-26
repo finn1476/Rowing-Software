@@ -275,6 +275,42 @@ function initializeDatabase() {
             error_log("Error checking/adding main_event_id column: " . $e->getMessage());
         }
         
+        // Add club_name column to registration_singles if it doesn't exist
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM registration_singles LIKE 'club_name'");
+            $stmt->execute();
+            $columnExists = $stmt->fetchColumn();
+            if (!$columnExists) {
+                $conn->exec("ALTER TABLE registration_singles ADD COLUMN club_name VARCHAR(255) DEFAULT NULL COMMENT 'Club/Verein name' AFTER name");
+            }
+        } catch (PDOException $e) {
+            error_log("Error checking/adding club_name column to registration_singles: " . $e->getMessage());
+        }
+        
+        // Add singles_enabled column to registration_events if it doesn't exist
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM registration_events LIKE 'singles_enabled'");
+            $stmt->execute();
+            $columnExists = $stmt->fetchColumn();
+            if (!$columnExists) {
+                $conn->exec("ALTER TABLE registration_events ADD COLUMN singles_enabled BOOLEAN DEFAULT TRUE COMMENT 'Whether single registrations are enabled for this event' AFTER allowed_boat_types");
+            }
+        } catch (PDOException $e) {
+            error_log("Error checking/adding singles_enabled column: " . $e->getMessage());
+        }
+        
+        // Add allowed_boat_types column to registration_events if it doesn't exist
+        try {
+            $stmt = $conn->prepare("SHOW COLUMNS FROM registration_events LIKE 'allowed_boat_types'");
+            $stmt->execute();
+            $columnExists = $stmt->fetchColumn();
+            if (!$columnExists) {
+                $conn->exec("ALTER TABLE registration_events ADD COLUMN allowed_boat_types JSON DEFAULT NULL COMMENT 'Array of allowed boat types for this event' AFTER is_active");
+            }
+        } catch (PDOException $e) {
+            error_log("Error checking/adding allowed_boat_types column: " . $e->getMessage());
+        }
+        
         // Update captain_birth_year column to allow NULL if it doesn't already
         try {
             $stmt = $conn->prepare("SHOW COLUMNS FROM registration_boats LIKE 'captain_birth_year'");
